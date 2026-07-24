@@ -89,6 +89,57 @@ function formatUsd(v: number): string {
   return `$${v.toFixed(2).replace(".", ",")}`;
 }
 
+interface SyncResult {
+  created: number;
+  updated: number;
+  seen: number;
+  error?: string;
+}
+
+export function SyncNotionButton({ disabled }: { disabled: boolean }) {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<SyncResult | null>(null);
+
+  async function run() {
+    setRunning(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/sync/notion", { method: "POST" });
+      const data: SyncResult = await res.json();
+      setResult(data);
+    } catch {
+      setResult({ created: 0, updated: 0, seen: 0, error: "Fallo de red." });
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div>
+      <button
+        onClick={run}
+        disabled={disabled || running}
+        className="flex min-h-12 w-full items-center justify-center rounded-2xl bg-brand px-4 text-base font-semibold text-white disabled:opacity-40"
+      >
+        {running ? "Sincronizando…" : "Sincronizar con Notion"}
+      </button>
+
+      {result && (
+        <div className="mt-3 rounded-2xl border border-border bg-surface px-4 py-3 text-sm">
+          {result.error ? (
+            <p className="text-danger">{result.error}</p>
+          ) : (
+            <p className="text-foreground">
+              {result.created} errores nuevos, {result.updated} actualizados
+              <span className="text-muted"> (de {result.seen} revisados)</span>.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface BackfillResult {
   processed: number;
   updated: number;
