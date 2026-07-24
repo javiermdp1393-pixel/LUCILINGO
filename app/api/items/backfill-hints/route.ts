@@ -10,7 +10,7 @@ export const maxDuration = 300;
 
 // Genera pistas para ejercicios que aún no tienen (fill_gap y correct_sentence).
 // Por lotes para no pasarnos del timeout; devuelve cuántos quedan.
-const MAX_BATCH = 15;
+const MAX_BATCH = 10;
 
 interface ItemRow {
   id: string;

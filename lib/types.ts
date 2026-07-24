@@ -80,6 +80,14 @@ export interface OtherIssue {
   explanation_es: string;
 }
 
+// Problema detectado al corregir escritura libre (§8.3).
+export interface WritingIssue {
+  wrong: string;
+  correct: string;
+  category: MistakeCategory;
+  explanation_es: string;
+}
+
 // Respuesta de /api/reviews: feedback inmediato tras responder (§5.3).
 export interface ReviewResult {
   isCorrect: boolean;

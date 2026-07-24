@@ -34,5 +34,5 @@ export async function proxy(request: NextRequest) {
 // Excluye estáticos, imágenes optimizadas, favicon y la imagen de Lucy (para
 // que se vea en la pantalla de login sin sesión).
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|lucy.png).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|lucy.png|manifest.webmanifest).*)"],
 };
