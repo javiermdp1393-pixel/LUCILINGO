@@ -88,3 +88,62 @@ function formatUsd(v: number): string {
   if (v < 0.01) return `<$0,01`;
   return `$${v.toFixed(2).replace(".", ",")}`;
 }
+
+interface BackfillResult {
+  processed: number;
+  updated: number;
+  remaining: number;
+  costUsd?: number;
+  error?: string;
+}
+
+export function BackfillHintsButton({ disabled }: { disabled: boolean }) {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<BackfillResult | null>(null);
+
+  async function run() {
+    setRunning(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/items/backfill-hints", { method: "POST" });
+      const data: BackfillResult = await res.json();
+      setResult(data);
+    } catch {
+      setResult({ processed: 0, updated: 0, remaining: 0, error: "Fallo de red." });
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div>
+      <button
+        onClick={run}
+        disabled={disabled || running}
+        className="flex min-h-12 w-full items-center justify-center rounded-2xl border border-brand px-4 text-sm font-semibold text-brand-ink disabled:opacity-40"
+      >
+        {running ? "Generando pistas…" : "Generar pistas que falten"}
+      </button>
+
+      {result && (
+        <div className="mt-3 rounded-2xl border border-border bg-surface px-4 py-3 text-sm">
+          {result.error ? (
+            <p className="text-danger">{result.error}</p>
+          ) : (
+            <>
+              <p className="text-foreground">
+                {result.updated} pistas nuevas
+                {typeof result.costUsd === "number" && <> · coste {formatUsd(result.costUsd)}</>}.
+              </p>
+              {result.remaining > 0 && (
+                <p className="mt-1 text-muted">
+                  Quedan {result.remaining} ejercicios sin pista. Pulsa otra vez para seguir.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

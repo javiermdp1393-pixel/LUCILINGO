@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { OWNER_USER_ID } from "@/lib/constants";
 import { anthropicConfigured } from "@/lib/generateItems";
 import { computeCostUsd } from "@/lib/constants";
-import { GenerateVariantsButton } from "./SettingsActions";
+import { GenerateVariantsButton, BackfillHintsButton } from "./SettingsActions";
 
 interface UsageRow {
   input_tokens: number;
@@ -29,19 +29,27 @@ export default async function SettingsPage() {
   let needingCount = 0;
   let totalCostUsd = 0;
   let totalCalls = 0;
+  let hintsMissing = 0;
   try {
     const sb = supabaseAdmin();
-    const [aiRes, needingRes, flaggedRes, usageRes] = await Promise.all([
+    const [aiRes, needingRes, flaggedRes, usageRes, hintsRes] = await Promise.all([
       sb.from("items").select("id", { count: "exact", head: true }).eq("generated_by", "ai"),
       sb.rpc("mistakes_needing_items", { p_user_id: OWNER_USER_ID }),
       sb.from("items").select("id", { count: "exact", head: true }).eq("status", "flagged"),
       sb
         .from("ai_generations")
         .select("input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens"),
+      sb
+        .from("items")
+        .select("id", { count: "exact", head: true })
+        .is("hint", null)
+        .eq("status", "active")
+        .in("type", ["fill_gap", "correct_sentence"]),
     ]);
     aiItems = aiRes.count ?? 0;
     flagged = flaggedRes.count ?? 0;
     needingCount = Array.isArray(needingRes.data) ? needingRes.data.length : 0;
+    hintsMissing = hintsRes.count ?? 0;
 
     const rows = (usageRes.data ?? []) as UsageRow[];
     totalCalls = rows.length;
@@ -100,6 +108,21 @@ export default async function SettingsPage() {
         <p className="mt-3 text-xs text-muted">
           El validador descarta automáticamente los ejercicios mal formados.
         </p>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold text-muted">Pistas contextuales</h2>
+        <p className="mt-1 text-sm text-foreground">
+          Una pista sutil bajo el enunciado (fill_gap y corrige la frase) para saber por dónde
+          va la respuesta al releerla. Rellena las que falten en los ejercicios ya existentes.
+        </p>
+        <div className="mt-3">
+          <div className="mb-3 rounded-2xl border border-border bg-surface px-4 py-3 text-center">
+            <div className="text-2xl font-bold tabular-nums">{hintsMissing}</div>
+            <div className="text-xs text-muted">ejercicios sin pista</div>
+          </div>
+          <BackfillHintsButton disabled={!hasKey} />
+        </div>
       </section>
 
       <section className="mt-8">

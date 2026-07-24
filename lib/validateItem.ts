@@ -7,6 +7,7 @@ export interface CandidateItem {
   answer: string;
   alternatives: string[];
   distractors: string[];
+  hint?: string;
 }
 
 export interface ValidationResult {

@@ -3,8 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { CATEGORY_LABELS } from "@/lib/constants";
+import { CATEGORY_LABELS, TASK_INSTRUCTIONS } from "@/lib/constants";
 import type { SessionItem, ReviewResult } from "@/lib/types";
+
+/** En «corrige la frase» pre-rellenamos con la frase para que solo edites el error. */
+function initialAnswerFor(item: SessionItem | undefined): string {
+  return item?.type === "correct_sentence" ? item.prompt : "";
+}
 
 type Phase = "loading" | "empty" | "question" | "feedback" | "finishing" | "error";
 
@@ -57,6 +62,7 @@ export default function SessionPage() {
         }
         setSessionId(data.sessionId);
         setItems(data.items);
+        setAnswer(initialAnswerFor(data.items[0]));
         setPhase("question");
         startedAt.current = Date.now();
       } catch {
@@ -111,8 +117,8 @@ export default function SessionPage() {
 
   const next = useCallback(async () => {
     setResult(null);
-    setAnswer("");
     if (index + 1 < items.length) {
+      setAnswer(initialAnswerFor(items[index + 1]));
       setIndex((i) => i + 1);
       setPhase("question");
       startedAt.current = Date.now();
@@ -178,9 +184,17 @@ export default function SessionPage() {
         </span>
       </div>
 
-      <div className="mt-5">
+      <p className="mt-4 text-sm font-semibold text-brand-ink">
+        {TASK_INSTRUCTIONS[current.type] ?? "Responde"}
+      </p>
+
+      <div className="mt-2">
         <Prompt text={current.prompt} />
       </div>
+
+      {current.hint && current.type !== "multiple_choice" && (
+        <p className="mt-2 text-sm italic text-muted">💡 {current.hint}</p>
+      )}
 
       {/* Zona de respuesta */}
       <div className="mt-8 flex-1">
@@ -218,19 +232,34 @@ export default function SessionPage() {
               if (phase === "question" && answer.trim()) submit(answer.trim());
             }}
           >
-            <input
-              ref={inputRef}
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              disabled={phase === "feedback" || submitting}
-              inputMode="text"
-              autoCapitalize="off"
-              autoCorrect="off"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="Escribe tu respuesta"
-              className="w-full rounded-2xl border border-border bg-surface px-4 py-3 text-lg outline-none focus:border-brand disabled:opacity-70"
-            />
+            {current.type === "correct_sentence" ? (
+              <textarea
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value)}
+                disabled={phase === "feedback" || submitting}
+                autoFocus
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                rows={3}
+                placeholder="Reescribe la frase corregida"
+                className="w-full resize-none rounded-2xl border border-border bg-surface px-4 py-3 text-lg outline-none focus:border-brand disabled:opacity-70"
+              />
+            ) : (
+              <input
+                ref={inputRef}
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value)}
+                disabled={phase === "feedback" || submitting}
+                inputMode="text"
+                autoCapitalize="off"
+                autoCorrect="off"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="Escribe tu respuesta"
+                className="w-full rounded-2xl border border-border bg-surface px-4 py-3 text-lg outline-none focus:border-brand disabled:opacity-70"
+              />
+            )}
             {phase === "question" && (
               <button
                 type="submit"
@@ -289,6 +318,7 @@ function Feedback({
       {result.isCorrect ? (
         <div className="rounded-2xl border border-success/40 bg-success-bg px-4 py-3 text-success">
           <p className="font-semibold">¡Correcto! ✅</p>
+          {result.feedbackEs && <p className="mt-1 text-sm">{result.feedbackEs}</p>}
           {result.masteredNow && (
             <p className="mt-1 text-sm">Este error queda dominado. Entra en el pool de refresco.</p>
           )}
@@ -301,12 +331,29 @@ function Feedback({
           <p className="mt-2 text-sm text-foreground">
             Respuesta correcta: <strong>{result.correctAnswer}</strong>
           </p>
-          <p className="mt-2 text-sm text-foreground">{result.explanationEs}</p>
+          <p className="mt-2 text-sm text-foreground">{result.feedbackEs || result.explanationEs}</p>
           {result.originalSentence && (
             <p className="mt-3 border-l-2 border-danger/40 pl-3 text-sm italic text-muted">
               Tu frase original: “{result.originalSentence}”
             </p>
           )}
+        </div>
+      )}
+
+      {result.otherIssues && result.otherIssues.length > 0 && (
+        <div className="mt-3 rounded-2xl border border-border bg-surface-muted px-4 py-3">
+          <p className="text-xs font-semibold text-muted">
+            Otros detalles de tu frase (no penalizan)
+          </p>
+          <ul className="mt-1 flex flex-col gap-1.5">
+            {result.otherIssues.map((issue, i) => (
+              <li key={i} className="text-sm text-foreground">
+                <span className="text-danger line-through">{issue.wrong}</span>{" "}
+                <span className="text-success">{issue.correct}</span>
+                <span className="text-muted"> — {issue.explanation_es}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       <button

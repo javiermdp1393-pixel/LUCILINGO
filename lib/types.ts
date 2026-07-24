@@ -70,6 +70,14 @@ export interface SessionItem {
   type: ItemType;
   prompt: string;
   options?: string[];
+  hint?: string | null;
+}
+
+// Otro error detectado en una respuesta abierta (§8.2), a título informativo.
+export interface OtherIssue {
+  wrong: string;
+  correct: string;
+  explanation_es: string;
 }
 
 // Respuesta de /api/reviews: feedback inmediato tras responder (§5.3).
@@ -81,6 +89,7 @@ export interface ReviewResult {
   originalSentence: string | null;
   correctForm: string | null;
   feedbackEs: string | null;
+  otherIssues?: OtherIssue[];
   nextDueAt: string;
   masteredNow: boolean;
 }

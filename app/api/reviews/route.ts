@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { evaluateAnswer } from "@/lib/evaluate";
 import { computeNextState } from "@/lib/leitner";
-import type { Item, ReviewState, ReviewResult, SeverityLevel } from "@/lib/types";
+import { evaluateOpenAnswer } from "@/lib/evaluateOpen";
+import { anthropicConfigured, GENERATION_MODEL } from "@/lib/generateItems";
+import { OWNER_USER_ID } from "@/lib/constants";
+import type { Item, ReviewState, ReviewResult, SeverityLevel, OtherIssue } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,10 +42,12 @@ export async function POST(request: Request) {
     // 2. Error asociado (para el feedback: explicación y frase original).
     const { data: mistake, error: mErr } = await sb
       .from("mistakes")
-      .select("id, severity, explanation_es, original_sentence, correct_form")
+      .select("id, title, category, severity, explanation_es, original_sentence, correct_form")
       .eq("id", item.mistake_id)
       .single<{
         id: string;
+        title: string;
+        category: string;
         severity: SeverityLevel;
         explanation_es: string;
         original_sentence: string | null;
@@ -62,8 +67,49 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Estado de repaso no encontrado." }, { status: 404 });
     }
 
-    // 4. Evaluar.
-    const evaluation = evaluateAnswer(item, userAnswer ?? "");
+    // 4. Evaluar. correct_sentence se evalúa por IA (§8.2): puntúa solo si se
+    //    corrige el error objetivo. El resto de tipos, comparación local.
+    let isCorrect: boolean;
+    let isTypo = false;
+    let evaluatedBy: "exact" | "llm" = "exact";
+    let quality = 0;
+    let feedbackEs: string | null = null;
+    let otherIssues: OtherIssue[] = [];
+
+    if (item.type === "correct_sentence" && anthropicConfigured()) {
+      const evalResult = await evaluateOpenAnswer({
+        title: mistake.title,
+        category: mistake.category,
+        explanation_es: mistake.explanation_es,
+        prompt: item.prompt,
+        answer: item.answer,
+        userAnswer: userAnswer ?? "",
+      });
+      isCorrect = evalResult.isCorrect;
+      evaluatedBy = "llm";
+      quality = evalResult.quality;
+      feedbackEs = evalResult.feedbackEs || null;
+      otherIssues = evalResult.otherIssues;
+
+      // Registrar el consumo de esta evaluación (contador de gasto).
+      await sb.from("ai_generations").insert({
+        user_id: OWNER_USER_ID,
+        mistake_id: item.mistake_id,
+        kind: "eval",
+        model: GENERATION_MODEL,
+        input_tokens: evalResult.usage.input_tokens,
+        output_tokens: evalResult.usage.output_tokens,
+        cache_read_tokens: evalResult.usage.cache_read_tokens,
+        cache_creation_tokens: evalResult.usage.cache_creation_tokens,
+        items_inserted: 0,
+      });
+    } else {
+      const evaluation = evaluateAnswer(item, userAnswer ?? "");
+      isCorrect = evaluation.isCorrect;
+      isTypo = evaluation.isTypo;
+      evaluatedBy = evaluation.evaluatedBy;
+      quality = evaluation.isCorrect ? 3 : 0;
+    }
 
     // 5. Registrar la review (append-only).
     const { error: rErr } = await sb.from("reviews").insert({
@@ -71,11 +117,11 @@ export async function POST(request: Request) {
       mistake_id: item.mistake_id,
       item_id: item.id,
       user_answer: userAnswer ?? "",
-      is_correct: evaluation.isCorrect,
-      quality: evaluation.isCorrect ? 3 : 0,
+      is_correct: isCorrect,
+      quality,
       response_ms: Number.isFinite(responseMs) ? Math.round(responseMs) : null,
-      evaluated_by: evaluation.evaluatedBy,
-      feedback_es: null,
+      evaluated_by: evaluatedBy,
+      feedback_es: feedbackEs,
     });
     if (rErr) throw rErr;
 
@@ -89,7 +135,7 @@ export async function POST(request: Request) {
     const distinctItemsOk = new Set((correctRows ?? []).map((r) => r.item_id)).size;
 
     // 7. Nuevo estado Leitner.
-    const next = computeNextState(state, evaluation.isCorrect, mistake.severity, distinctItemsOk);
+    const next = computeNextState(state, isCorrect, mistake.severity, distinctItemsOk);
     const masteredNow = next.mastered_at !== null && state.mastered_at === null;
 
     const { error: upErr } = await sb.from("review_state").update(next).eq("mistake_id", item.mistake_id);
@@ -103,13 +149,14 @@ export async function POST(request: Request) {
     if (tsErr) throw tsErr;
 
     const result: ReviewResult = {
-      isCorrect: evaluation.isCorrect,
-      isTypo: evaluation.isTypo,
+      isCorrect,
+      isTypo,
       correctAnswer: item.answer,
       explanationEs: mistake.explanation_es,
       originalSentence: mistake.original_sentence,
       correctForm: mistake.correct_form,
-      feedbackEs: null,
+      feedbackEs,
+      otherIssues,
       nextDueAt: next.due_at,
       masteredNow,
     };
