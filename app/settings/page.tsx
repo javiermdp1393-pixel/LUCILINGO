@@ -2,7 +2,21 @@ import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { OWNER_USER_ID } from "@/lib/constants";
 import { anthropicConfigured } from "@/lib/generateItems";
+import { computeCostUsd } from "@/lib/constants";
 import { GenerateVariantsButton } from "./SettingsActions";
+
+interface UsageRow {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+}
+
+function formatUsd(v: number): string {
+  if (v <= 0) return "$0,00";
+  if (v < 0.01) return "<$0,01";
+  return `$${v.toFixed(2).replace(".", ",")}`;
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,16 +27,34 @@ export default async function SettingsPage() {
   let aiItems = 0;
   let flagged = 0;
   let needingCount = 0;
+  let totalCostUsd = 0;
+  let totalCalls = 0;
   try {
     const sb = supabaseAdmin();
-    const [aiRes, needingRes, flaggedRes] = await Promise.all([
+    const [aiRes, needingRes, flaggedRes, usageRes] = await Promise.all([
       sb.from("items").select("id", { count: "exact", head: true }).eq("generated_by", "ai"),
       sb.rpc("mistakes_needing_items", { p_user_id: OWNER_USER_ID }),
       sb.from("items").select("id", { count: "exact", head: true }).eq("status", "flagged"),
+      sb
+        .from("ai_generations")
+        .select("input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens"),
     ]);
     aiItems = aiRes.count ?? 0;
     flagged = flaggedRes.count ?? 0;
     needingCount = Array.isArray(needingRes.data) ? needingRes.data.length : 0;
+
+    const rows = (usageRes.data ?? []) as UsageRow[];
+    totalCalls = rows.length;
+    const totals = rows.reduce(
+      (acc, r) => ({
+        input_tokens: acc.input_tokens + (r.input_tokens ?? 0),
+        output_tokens: acc.output_tokens + (r.output_tokens ?? 0),
+        cache_read_tokens: acc.cache_read_tokens + (r.cache_read_tokens ?? 0),
+        cache_creation_tokens: acc.cache_creation_tokens + (r.cache_creation_tokens ?? 0),
+      }),
+      { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 }
+    );
+    totalCostUsd = computeCostUsd(totals);
   } catch {
     // Sin conexión a BD (p. ej. falta la service_role key): mostramos ceros.
   }
@@ -66,8 +98,25 @@ export default async function SettingsPage() {
         </div>
 
         <p className="mt-3 text-xs text-muted">
-          El validador descarta automáticamente los ejercicios mal formados. Coste aproximado:
-          ~3 llamadas por error a lo largo de su vida.
+          El validador descarta automáticamente los ejercicios mal formados.
+        </p>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold text-muted">Gasto de IA</h2>
+        <div className="mt-3 flex items-center justify-between rounded-2xl border border-border bg-surface px-4 py-3">
+          <div>
+            <div className="text-2xl font-bold tabular-nums">{formatUsd(totalCostUsd)}</div>
+            <div className="text-xs text-muted">acumulado ({totalCalls} llamadas)</div>
+          </div>
+          <div className="text-right text-xs text-muted">
+            claude-sonnet-5
+            <br />
+            $2 / $10 por 1M tok.
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-muted">
+          Coste real calculado con los tokens que devuelve la API en cada llamada.
         </p>
       </section>
 

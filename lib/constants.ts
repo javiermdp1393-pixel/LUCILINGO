@@ -53,3 +53,30 @@ export const ITEM_TYPE_LABELS: Record<string, string> = {
   multiple_choice: "Elige la opción",
   correct_sentence: "Corrige la frase",
 };
+
+// Precios de claude-sonnet-5 en USD por millón de tokens (tarifa de
+// introducción vigente hasta 2026-08-31; después input 3 / output 15).
+// cache_read ≈ 0.1× input, cache_write ≈ 1.25× input.
+export const SONNET5_PRICING = {
+  input: 2,
+  output: 10,
+  cacheRead: 0.2,
+  cacheWrite: 2.5,
+} as const;
+
+/** Coste en USD de una llamada a partir de sus tokens. */
+export function computeCostUsd(tokens: {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+}): number {
+  const p = SONNET5_PRICING;
+  return (
+    (tokens.input_tokens * p.input +
+      tokens.output_tokens * p.output +
+      tokens.cache_read_tokens * p.cacheRead +
+      tokens.cache_creation_tokens * p.cacheWrite) /
+    1_000_000
+  );
+}
