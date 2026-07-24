@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+/* Paleta de marca Lucilingo, sacada de Lucy (tabby beige, ojos azules,
+   patitas naranjas). Mobile-first, con modo claro y oscuro. */
+:root {
+  --background: #f7f3ea;
+  --surface: #ffffff;
+  --surface-muted: #f0ead9;
+  --border: #e4dcc8;
+  --foreground: #2b2823;
+  --muted: #7c7566;
+  --brand: #3f74a6; /* azul ojos */
+  --brand-ink: #2c5680;
+  --accent: #e8963e; /* naranja patitas */
+  --success: #3f8f6b;
+  --success-bg: #e5f3ec;
+  --danger: #c25b4c;
+  --danger-bg: #f8e9e6;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-accent: var(--accent);
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #1c1a17;
+    --surface: #26241f;
+    --surface-muted: #302d27;
+    --border: #3a362f;
+    --foreground: #efe9dd;
+    --muted: #a49b89;
+    --brand: #6aa0cf;
+    --brand-ink: #8bb8dd;
+    --accent: #f0a558;
+    --success: #6bbf95;
+    --success-bg: #24352d;
+    --danger: #e08476;
+    --danger-bg: #3a2723;
+  }
+}
+
+html {
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+/* Áreas táctiles cómodas en móvil (§9: mínimo 44px). */
+button,
+[role="button"] {
+  touch-action: manipulation;
+}
