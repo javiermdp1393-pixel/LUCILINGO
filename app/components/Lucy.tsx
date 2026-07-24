@@ -4,7 +4,7 @@ import Image from "next/image";
 export function Lucy({ size = 96, className = "" }: { size?: number; className?: string }) {
   return (
     <Image
-      src="/brand/lucy.png"
+      src="/lucy.png"
       alt="Lucy"
       width={size}
       height={size}

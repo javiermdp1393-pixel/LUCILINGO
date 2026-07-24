@@ -246,7 +246,12 @@ export default function SessionPage() {
 
       {/* Feedback */}
       {phase === "feedback" && result && (
-        <Feedback result={result} onNext={next} isLast={index + 1 === items.length} />
+        <Feedback
+          result={result}
+          onNext={next}
+          isLast={index + 1 === items.length}
+          itemId={current.itemId}
+        />
       )}
     </main>
   );
@@ -256,11 +261,29 @@ function Feedback({
   result,
   onNext,
   isLast,
+  itemId,
 }: {
   result: ReviewResult;
   onNext: () => void;
   isLast: boolean;
+  itemId: string;
 }) {
+  const [flagged, setFlagged] = useState(false);
+  const [flagging, setFlagging] = useState(false);
+
+  const flag = useCallback(async () => {
+    if (flagging || flagged) return;
+    setFlagging(true);
+    try {
+      const res = await fetch(`/api/items/${itemId}/flag`, { method: "POST" });
+      if (res.ok) setFlagged(true);
+    } catch {
+      /* silencioso: no es crítico */
+    } finally {
+      setFlagging(false);
+    }
+  }, [itemId, flagging, flagged]);
+
   return (
     <div className="mt-4">
       {result.isCorrect ? (
@@ -293,6 +316,20 @@ function Feedback({
       >
         {isLast ? "Ver resumen" : "Siguiente"}
       </button>
+
+      <div className="mt-3 text-center">
+        {flagged ? (
+          <span className="text-xs text-muted">Marcado. No volverá a aparecer.</span>
+        ) : (
+          <button
+            onClick={flag}
+            disabled={flagging}
+            className="text-xs text-muted underline underline-offset-2 disabled:opacity-50"
+          >
+            Este ejercicio está mal
+          </button>
+        )}
+      </div>
     </div>
   );
 }

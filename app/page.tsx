@@ -24,9 +24,9 @@ async function getStats(): Promise<Stats> {
 
 function StatCard({ value, label }: { value: number; label: string }) {
   return (
-    <div className="rounded-2xl bg-surface border border-border px-4 py-3 text-center">
-      <div className="text-2xl font-bold text-foreground tabular-nums">{value}</div>
-      <div className="text-xs text-muted mt-0.5">{label}</div>
+    <div className="rounded-2xl border border-border bg-surface px-3 py-3 text-center">
+      <div className="text-2xl font-bold tabular-nums text-foreground">{value}</div>
+      <div className="mt-0.5 text-xs text-muted">{label}</div>
     </div>
   );
 }
@@ -42,19 +42,30 @@ export default async function HomePage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pb-10 pt-8">
-      <header className="flex items-center gap-3">
-        <Lucy size={56} />
-        <div>
-          <h1 className="text-xl font-bold leading-tight text-foreground">Lucilingo</h1>
-          <p className="text-sm text-muted">Hoy toca vaciar errores.</p>
+    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pb-10 pt-6">
+      {/* Hero: Lucy protagonista */}
+      <section className="flex flex-col items-center pt-4 text-center">
+        <div className="relative flex items-center justify-center">
+          <div
+            aria-hidden
+            className="absolute h-56 w-56 rounded-full bg-accent/10 blur-2xl"
+          />
+          <Lucy size={200} className="relative drop-shadow-sm" />
         </div>
+
+        <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground">Lucilingo</h1>
+        <p className="mt-1 text-base text-muted">
+          {stats.due_count > 0
+            ? "Hoy toca vaciar errores."
+            : "Todo al día. Repasemos igualmente."}
+        </p>
+
         {stats.streak > 0 && (
-          <span className="ml-auto rounded-full bg-accent/15 px-3 py-1 text-sm font-semibold text-accent">
-            🔥 {stats.streak}
+          <span className="mt-3 inline-flex items-center gap-1 rounded-full bg-accent/15 px-3 py-1 text-sm font-semibold text-accent">
+            🔥 {stats.streak} {stats.streak === 1 ? "día" : "días"} de racha
           </span>
         )}
-      </header>
+      </section>
 
       {dbError && (
         <div className="mt-6 rounded-2xl border border-danger/40 bg-danger-bg px-4 py-3 text-sm text-danger">
@@ -78,13 +89,16 @@ export default async function HomePage() {
         </Link>
         <p className="mt-2 text-center text-xs text-muted">
           {stats.due_count > 0
-            ? `${Math.min(stats.due_count, 10)} de tus ${stats.due_count} errores vencidos, ~5 min`
+            ? `${Math.min(stats.due_count, 10)} de tus ${stats.due_count} errores vencidos · ~5 min`
             : "Sin vencimientos: repasarás los más próximos"}
         </p>
 
-        <nav className="mt-6 flex justify-center gap-6 text-sm">
+        <nav className="mt-6 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm">
           <Link href="/log" className="text-brand-ink underline-offset-4 hover:underline">
             Ver mis errores
+          </Link>
+          <Link href="/settings" className="text-brand-ink underline-offset-4 hover:underline">
+            Ajustes
           </Link>
           <span className="text-muted">Escritura libre · pronto</span>
         </nav>
