@@ -95,6 +95,7 @@ export async function POST(request: Request) {
         answer: string;
         alternatives: string[];
         distractors: string[];
+        hint: string | null;
         status: string;
         generated_by: string;
         model: string;
@@ -116,6 +117,7 @@ export async function POST(request: Request) {
           answer: c.answer.trim(),
           alternatives: (c.alternatives ?? []).map((s) => s.trim()).filter(Boolean),
           distractors: c.type === "multiple_choice" ? (c.distractors ?? []).map((s) => s.trim()).filter(Boolean) : [],
+          hint: c.hint?.trim() ? c.hint.trim() : null,
           status: "active",
           generated_by: "ai",
           model: GENERATION_MODEL,
@@ -133,6 +135,7 @@ export async function POST(request: Request) {
       await sb.from("ai_generations").insert({
         user_id: OWNER_USER_ID,
         mistake_id: mistakeId,
+        kind: "generate",
         model: GENERATION_MODEL,
         input_tokens: usage.input_tokens,
         output_tokens: usage.output_tokens,

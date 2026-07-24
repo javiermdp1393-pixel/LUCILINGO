@@ -31,13 +31,14 @@ const OUTPUT_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["type", "prompt", "answer", "alternatives", "distractors"],
+        required: ["type", "prompt", "answer", "alternatives", "distractors", "hint"],
         properties: {
           type: { type: "string", enum: ["fill_gap", "multiple_choice", "correct_sentence"] },
           prompt: { type: "string" },
           answer: { type: "string" },
           alternatives: { type: "array", items: { type: "string" } },
           distractors: { type: "array", items: { type: "string" } },
+          hint: { type: "string" },
         },
       },
     },
@@ -77,8 +78,14 @@ Reglas:
   en "distractors").
 - correct_sentence: una frase que contenga este error y solo este error; "answer" es la frase corregida.
 
-Devuelve para cada ejercicio: type, prompt, answer, alternatives (respuestas alternativas válidas,
-puede ir vacío) y distractors (solo para multiple_choice; vacío en los demás).`;
+Devuelve para cada ejercicio:
+- type, prompt, answer
+- alternatives: respuestas alternativas válidas (puede ir vacío)
+- distractors: solo para multiple_choice; vacío en los demás
+- hint: una pista MUY corta (2 a 6 palabras) que oriente sin desvelar la respuesta. Para fill_gap
+  y correct_sentence, un sinónimo o gloss sutil en español (o en inglés si queda más natural) que
+  recuerde por dónde va la respuesta cuando releas la frase dentro de una semana; NO puede contener
+  la respuesta literal. Para multiple_choice puede ir vacío.`;
 }
 
 export interface GenerationUsage {

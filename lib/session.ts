@@ -25,6 +25,7 @@ interface ItemRow {
   prompt: string;
   answer: string;
   distractors: string[] | null;
+  hint: string | null;
 }
 
 interface MistakeRow {
@@ -56,7 +57,7 @@ export async function buildSessionItems(): Promise<SessionItem[]> {
   const mistakeIds = rows.map((r) => r.mistake_id);
 
   const [{ data: items, error: e2 }, { data: mistakes, error: e3 }] = await Promise.all([
-    sb.from("items").select("id, mistake_id, type, prompt, answer, distractors").in("id", itemIds),
+    sb.from("items").select("id, mistake_id, type, prompt, answer, distractors, hint").in("id", itemIds),
     sb.from("mistakes").select("id, ref, title, category, severity").in("id", mistakeIds),
   ]);
   if (e2) throw e2;
@@ -81,6 +82,7 @@ export async function buildSessionItems(): Promise<SessionItem[]> {
       severity: mistake.severity,
       type: item.type,
       prompt: item.prompt,
+      hint: item.hint,
     };
 
     if (item.type === "multiple_choice") {

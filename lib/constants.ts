@@ -54,6 +54,13 @@ export const ITEM_TYPE_LABELS: Record<string, string> = {
   correct_sentence: "Corrige la frase",
 };
 
+// Instrucción que se muestra en la sesión según el tipo de ejercicio.
+export const TASK_INSTRUCTIONS: Record<string, string> = {
+  fill_gap: "Rellena el hueco",
+  multiple_choice: "Elige la opción correcta",
+  correct_sentence: "Reescribe la frase corrigiendo el error",
+};
+
 // Precios de claude-sonnet-5 en USD por millón de tokens (tarifa de
 // introducción vigente hasta 2026-08-31; después input 3 / output 15).
 // cache_read ≈ 0.1× input, cache_write ≈ 1.25× input.
