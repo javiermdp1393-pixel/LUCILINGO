@@ -100,10 +100,12 @@ export default async function HomePage() {
           <Link href="/log" className="text-brand-ink underline-offset-4 hover:underline">
             Ver mis errores
           </Link>
+          <Link href="/writing" className="text-brand-ink underline-offset-4 hover:underline">
+            Escritura libre
+          </Link>
           <Link href="/settings" className="text-brand-ink underline-offset-4 hover:underline">
             Ajustes
           </Link>
-          <span className="text-muted">Escritura libre · pronto</span>
         </nav>
       </div>
     </main>
