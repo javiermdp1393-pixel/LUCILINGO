@@ -2,8 +2,9 @@ import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { OWNER_USER_ID } from "@/lib/constants";
 import { anthropicConfigured } from "@/lib/generateItems";
+import { notionConfigured } from "@/lib/notionSync";
 import { computeCostUsd } from "@/lib/constants";
-import { GenerateVariantsButton, BackfillHintsButton } from "./SettingsActions";
+import { GenerateVariantsButton, BackfillHintsButton, SyncNotionButton } from "./SettingsActions";
 
 interface UsageRow {
   input_tokens: number;
@@ -23,6 +24,7 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const hasKey = anthropicConfigured();
+  const hasNotion = notionConfigured();
 
   let aiItems = 0;
   let flagged = 0;
@@ -30,8 +32,15 @@ export default async function SettingsPage() {
   let totalCostUsd = 0;
   let totalCalls = 0;
   let hintsMissing = 0;
+  let notionLastRun: string | null = null;
   try {
     const sb = supabaseAdmin();
+    const syncRes = await sb
+      .from("notion_sync_state")
+      .select("last_run_at")
+      .eq("id", 1)
+      .single<{ last_run_at: string | null }>();
+    notionLastRun = syncRes.data?.last_run_at ?? null;
     const [aiRes, needingRes, flaggedRes, usageRes, hintsRes] = await Promise.all([
       sb.from("items").select("id", { count: "exact", head: true }).eq("generated_by", "ai"),
       sb.rpc("mistakes_needing_items", { p_user_id: OWNER_USER_ID }),
@@ -75,6 +84,28 @@ export default async function SettingsPage() {
           Inicio
         </Link>
       </header>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold text-muted">Sincronización con Notion</h2>
+        <p className="mt-1 text-sm text-foreground">
+          Trae los errores nuevos del <em>Mistake log</em> de Notion (upsert por página, no
+          duplica). Los nuevos entran con su ejercicio inicial; luego genera variantes.
+        </p>
+        {!hasNotion && (
+          <div className="mt-3 rounded-2xl border border-danger/40 bg-danger-bg px-4 py-3 text-sm text-danger">
+            Falta <code>NOTION_TOKEN</code> en el entorno. Crea una integración en Notion, comparte
+            el <em>Mistake log</em> con ella y añade el token en Vercel.
+          </div>
+        )}
+        <div className="mt-3">
+          <SyncNotionButton disabled={!hasNotion} />
+        </div>
+        {notionLastRun && (
+          <p className="mt-2 text-xs text-muted">
+            Última sincronización: {new Date(notionLastRun).toLocaleString("es-ES")}
+          </p>
+        )}
+      </section>
 
       <section className="mt-8">
         <h2 className="text-sm font-semibold text-muted">Generación de variantes (IA)</h2>
