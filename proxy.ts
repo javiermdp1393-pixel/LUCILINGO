@@ -31,8 +31,8 @@ export async function proxy(request: NextRequest) {
   return NextResponse.redirect(url);
 }
 
-// Excluye estáticos, imágenes optimizadas, favicon y la carpeta de marca (para
-// que Lucy se vea en la pantalla de login).
+// Excluye estáticos, imágenes optimizadas, favicon y la imagen de Lucy (para
+// que se vea en la pantalla de login sin sesión).
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|brand/).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|lucy.png).*)"],
 };

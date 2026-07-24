@@ -11,7 +11,7 @@ export default async function LoginPage({
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center px-6">
-      <Lucy size={96} />
+      <Lucy size={140} />
       <h1 className="mt-4 text-2xl font-bold">Lucilingo</h1>
       <p className="mt-1 text-sm text-muted">Introduce la contraseña para entrar.</p>
 
