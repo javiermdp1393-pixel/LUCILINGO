@@ -81,15 +81,28 @@ Devuelve para cada ejercicio: type, prompt, answer, alternatives (respuestas alt
 puede ir vacío) y distractors (solo para multiple_choice; vacío en los demás).`;
 }
 
+export interface GenerationUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+}
+
+export interface GenerationResult {
+  items: CandidateItem[];
+  usage: GenerationUsage;
+}
+
 /**
  * Genera 3 ejercicios (uno de cada tipo) para un error, vía Anthropic (§8.1).
  * Requiere ANTHROPIC_API_KEY en el entorno (solo servidor). No valida ni guarda:
- * de eso se encarga la ruta con validateItem.
+ * de eso se encarga la ruta con validateItem. Devuelve también el consumo de
+ * tokens para el contador de gasto.
  */
 export async function generateItemsForMistake(
   mistake: MistakeForPrompt,
   existingPrompts: string[]
-): Promise<CandidateItem[]> {
+): Promise<GenerationResult> {
   const client = new Anthropic(); // lee ANTHROPIC_API_KEY del entorno
 
   const response = await client.messages.create({
@@ -99,6 +112,13 @@ export async function generateItemsForMistake(
     messages: [{ role: "user", content: buildPrompt(mistake, existingPrompts) }],
   });
 
+  const usage: GenerationUsage = {
+    input_tokens: response.usage.input_tokens ?? 0,
+    output_tokens: response.usage.output_tokens ?? 0,
+    cache_read_tokens: response.usage.cache_read_input_tokens ?? 0,
+    cache_creation_tokens: response.usage.cache_creation_input_tokens ?? 0,
+  };
+
   const textBlock = response.content.find((b) => b.type === "text");
   const raw = textBlock && "text" in textBlock ? textBlock.text : "{}";
 
@@ -106,7 +126,7 @@ export async function generateItemsForMistake(
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return [];
+    return { items: [], usage };
   }
-  return Array.isArray(parsed.items) ? parsed.items : [];
+  return { items: Array.isArray(parsed.items) ? parsed.items : [], usage };
 }
