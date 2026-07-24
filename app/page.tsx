@@ -93,9 +93,12 @@ export default async function HomePage() {
             : "Sin vencimientos: repasarás los más próximos"}
         </p>
 
-        <nav className="mt-6 flex justify-center gap-6 text-sm">
+        <nav className="mt-6 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm">
           <Link href="/log" className="text-brand-ink underline-offset-4 hover:underline">
             Ver mis errores
+          </Link>
+          <Link href="/settings" className="text-brand-ink underline-offset-4 hover:underline">
+            Ajustes
           </Link>
           <span className="text-muted">Escritura libre · pronto</span>
         </nav>
