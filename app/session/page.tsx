@@ -40,6 +40,7 @@ export default function SessionPage() {
   const [result, setResult] = useState<ReviewResult | null>(null);
   const [correctCount, setCorrectCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [showHint, setShowHint] = useState(false);
 
   const startedAt = useRef<number>(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -117,6 +118,7 @@ export default function SessionPage() {
 
   const next = useCallback(async () => {
     setResult(null);
+    setShowHint(false);
     if (index + 1 < items.length) {
       setAnswer(initialAnswerFor(items[index + 1]));
       setIndex((i) => i + 1);
@@ -193,7 +195,20 @@ export default function SessionPage() {
       </div>
 
       {current.hint && current.type !== "multiple_choice" && (
-        <p className="mt-2 text-sm italic text-muted">💡 {current.hint}</p>
+        <div className="mt-2 min-h-6">
+          {showHint ? (
+            <p className="text-sm italic text-muted">💡 {current.hint}</p>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowHint(true)}
+              disabled={phase === "feedback"}
+              className="text-sm text-muted underline underline-offset-2 disabled:opacity-40"
+            >
+              💡 Ver pista
+            </button>
+          )}
+        </div>
       )}
 
       {/* Zona de respuesta */}
