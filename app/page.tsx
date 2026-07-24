@@ -94,6 +94,9 @@ export default async function HomePage() {
         </p>
 
         <nav className="mt-6 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm">
+          <Link href="/progress" className="text-brand-ink underline-offset-4 hover:underline">
+            Progreso
+          </Link>
           <Link href="/log" className="text-brand-ink underline-offset-4 hover:underline">
             Ver mis errores
           </Link>
