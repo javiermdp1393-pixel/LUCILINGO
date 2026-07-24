@@ -10,6 +10,15 @@ const geistSans = Geist({
 export const metadata: Metadata = {
   title: "Lucilingo",
   description: "Repaso espaciado de tus errores reales de inglés.",
+  icons: {
+    icon: "/lucy.png",
+    apple: "/lucy.png",
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Lucilingo",
+    statusBarStyle: "default",
+  },
 };
 
 export const viewport: Viewport = {

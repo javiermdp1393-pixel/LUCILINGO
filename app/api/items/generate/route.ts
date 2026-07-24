@@ -13,8 +13,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-// Máximo de errores por llamada, para acotar latencia y coste del batch.
-const MAX_BATCH = 12;
+// Máximo de errores por llamada, acotado para no rozar el timeout de Vercel
+// (Hobby = 60s). El botón indica cuántos quedan para volver a pulsar.
+const MAX_BATCH = 6;
 
 interface GenerateBody {
   mistakeId?: string;
