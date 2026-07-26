@@ -225,8 +225,16 @@ export default function WritingPage() {
         <section className="mt-8 flex flex-col items-center text-center">
           <p className="text-2xl font-bold">Hecho ✅</p>
           <p className="mt-2 text-foreground">
-            {result.added} errores nuevos
-            {result.reactivated > 0 && <>, {result.reactivated} reincidencias reactivadas</>}.
+            {result.added === 0
+              ? "Ningún error nuevo"
+              : `${result.added} ${result.added === 1 ? "error nuevo" : "errores nuevos"}`}
+            {result.reactivated > 0 && (
+              <>
+                , {result.reactivated}{" "}
+                {result.reactivated === 1 ? "reincidencia reactivada" : "reincidencias reactivadas"}
+              </>
+            )}
+            .
           </p>
           {result.added > 0 && (
             <p className="mt-2 text-sm text-muted">
