@@ -29,15 +29,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const correct = (issue.correct ?? "").trim();
       if (!wrong || !issue.category) continue;
 
-      // ¿Existe ya (mismo wrong_form + categoría)?
-      const { data: existing } = await sb
+      // ¿Existe ya? Comparamos dentro de la misma categoría de forma tolerante:
+      // la IA puede devolver "any doubts" donde el log guarda "doubts", así que
+      // vale si una forma contiene a la otra. Sin esto se duplicarían errores
+      // que en realidad son reincidencias — la señal más valiosa del sistema.
+      const { data: sameCategory } = await sb
         .from("mistakes")
-        .select("id")
+        .select("id, wrong_form")
         .eq("user_id", OWNER_USER_ID)
         .eq("category", issue.category)
-        .ilike("wrong_form", wrong)
-        .limit(1)
-        .maybeSingle();
+        .eq("archived", false)
+        .not("wrong_form", "is", null);
+
+      const needle = wrong.toLowerCase();
+      const existing = ((sameCategory ?? []) as { id: string; wrong_form: string }[]).find((row) => {
+        const stored = (row.wrong_form ?? "").trim().toLowerCase();
+        if (!stored) return false;
+        return stored === needle || needle.includes(stored) || stored.includes(needle);
+      });
 
       if (existing) {
         // Reincidencia: reiniciar el repaso a box 1, vencido ya.
