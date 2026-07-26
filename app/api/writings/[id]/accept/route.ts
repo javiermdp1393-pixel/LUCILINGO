@@ -10,6 +10,49 @@ interface Body {
   accepted: WritingIssue[];
 }
 
+interface CandidateRow {
+  id: string;
+  wrong_form: string | null;
+  category: string;
+}
+
+/** Minúsculas, sin puntuación ni espacios de sobra, para comparar formas. */
+function normalizeForm(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[.,;:!?¿¡"'()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** ¿`needle` contiene a `stored` como palabra(s) completa(s)? */
+function containsAsWords(needle: string, stored: string): boolean {
+  return new RegExp(`(^|\\s)${stored.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|\\s)`).test(needle);
+}
+
+// Palabras demasiado comunes para identificar un error por sí solas: si el
+// fragmento es solo una de estas, exigimos igualdad exacta.
+const STOPWORDS = new Set([
+  "the", "a", "an", "to", "of", "in", "on", "at", "for", "and", "or", "is", "be", "it",
+]);
+
+function tooGenericAlone(form: string): boolean {
+  return !form.includes(" ") && STOPWORDS.has(form);
+}
+
+/**
+ * Dos formas designan el mismo error si son iguales, o si una contiene a la
+ * otra como palabras completas. El límite de palabra evita que "bad" empareje
+ * con "badge"; la lista de palabras vacías evita emparejar por un "the" suelto.
+ */
+function formsMatch(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (!tooGenericAlone(b) && b.length >= 3 && containsAsWords(a, b)) return true;
+  if (!tooGenericAlone(a) && a.length >= 3 && containsAsWords(b, a)) return true;
+  return false;
+}
+
 // POST /api/writings/[id]/accept → convierte los problemas aceptados en mistakes.
 // Si el error ya existe (mismo wrong_form + category) no se duplica: se reinicia
 // su review_state a box 1 (volver a cometerlo es la señal más valiosa, §5.4).
@@ -29,24 +72,28 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const correct = (issue.correct ?? "").trim();
       if (!wrong || !issue.category) continue;
 
-      // ¿Existe ya? Comparamos dentro de la misma categoría de forma tolerante:
-      // la IA puede devolver "any doubts" donde el log guarda "doubts", así que
-      // vale si una forma contiene a la otra. Sin esto se duplicarían errores
-      // que en realidad son reincidencias — la señal más valiosa del sistema.
-      const { data: sameCategory } = await sb
+      // ¿Existe ya? El emparejamiento va por el FRAGMENTO, no por la categoría:
+      // el fragmento incorrecto es la identidad del error ("from its side" es el
+      // mismo fallo lo etiquete el modelo como preposición o como pronombre),
+      // mientras que la categoría es una interpretación que varía entre
+      // llamadas. Filtrar por categoría hacía que reincidencias evidentes
+      // entraran como errores nuevos.
+      const { data: candidates } = await sb
         .from("mistakes")
-        .select("id, wrong_form")
+        .select("id, wrong_form, category")
         .eq("user_id", OWNER_USER_ID)
-        .eq("category", issue.category)
         .eq("archived", false)
         .not("wrong_form", "is", null);
 
-      const needle = wrong.toLowerCase();
-      const existing = ((sameCategory ?? []) as { id: string; wrong_form: string }[]).find((row) => {
-        const stored = (row.wrong_form ?? "").trim().toLowerCase();
-        if (!stored) return false;
-        return stored === needle || needle.includes(stored) || stored.includes(needle);
-      });
+      const needle = normalizeForm(wrong);
+      const matches = ((candidates ?? []) as CandidateRow[]).filter((row) =>
+        formsMatch(needle, normalizeForm(row.wrong_form ?? ""))
+      );
+      // Si hay varios, gana el de la misma categoría y, en su defecto, el
+      // fragmento más específico (el más largo).
+      const existing =
+        matches.find((m) => m.category === issue.category) ??
+        matches.sort((a, b) => (b.wrong_form ?? "").length - (a.wrong_form ?? "").length)[0];
 
       if (existing) {
         // Reincidencia: reiniciar el repaso a box 1, vencido ya.
