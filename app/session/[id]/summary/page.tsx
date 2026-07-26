@@ -38,8 +38,13 @@ export default async function SummaryPage({ params }: { params: Promise<{ id: st
 
   const total = rows.length;
   const correct = rows.filter((r) => r.is_correct).length;
-  const times = rows.map((r) => r.response_ms).filter((t): t is number => typeof t === "number");
-  const avgMs = times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : 0;
+  // Mediana y descarte de tiempos > 2 min: una pantalla dejada abierta no es
+  // "pensar", y con la media un solo caso disparaba la cifra.
+  const times = rows
+    .map((r) => r.response_ms)
+    .filter((t): t is number => typeof t === "number" && t >= 500 && t <= 120000)
+    .sort((a, b) => a - b);
+  const avgMs = times.length ? times[Math.floor(times.length / 2)] : 0;
 
   // Categorías flojas: las que tuvieron algún fallo en esta sesión.
   const mistakeIds = [...new Set(rows.map((r) => r.mistake_id))];
@@ -78,7 +83,7 @@ export default async function SummaryPage({ params }: { params: Promise<{ id: st
         </div>
         <div className="rounded-2xl border border-border bg-surface px-4 py-3 text-center">
           <div className="text-2xl font-bold tabular-nums">{(avgMs / 1000).toFixed(1)}s</div>
-          <div className="text-xs text-muted">tiempo medio</div>
+          <div className="text-xs text-muted">tiempo típico</div>
         </div>
       </section>
 

@@ -151,8 +151,8 @@ export default async function ProgressPage() {
           )}
         </ul>
         <p className="mt-3 text-xs text-muted">
-          El tiempo medio de respuesta es un proxy de cuánto has automatizado la regla: baja según la
-          interiorizas.
+          El tiempo es la mediana de respuesta (descartando pausas largas): un proxy de cuánto has
+          automatizado la regla, que baja según la interiorizas.
         </p>
       </section>
     </main>

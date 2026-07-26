@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { evaluateAnswer } from "@/lib/evaluate";
 import { computeNextState } from "@/lib/leitner";
 import { evaluateOpenAnswer } from "@/lib/evaluateOpen";
+import { verifyAlternativeAnswer } from "@/lib/verifyAlternative";
 import { anthropicConfigured, GENERATION_MODEL } from "@/lib/generateItems";
 import { OWNER_USER_ID } from "@/lib/constants";
 import type { Item, ReviewState, ReviewResult, SeverityLevel, OtherIssue } from "@/lib/types";
@@ -75,6 +76,9 @@ export async function POST(request: Request) {
     let quality = 0;
     let feedbackEs: string | null = null;
     let otherIssues: OtherIssue[] = [];
+    // Si la IA valida una respuesta alternativa, la guardamos en el ítem para
+    // no volver a preguntar por ella (el sistema aprende y gasta menos).
+    let acceptedAlternative: string | null = null;
 
     if (item.type === "correct_sentence" && anthropicConfigured()) {
       const evalResult = await evaluateOpenAnswer({
@@ -109,6 +113,48 @@ export async function POST(request: Request) {
       isTypo = evaluation.isTypo;
       evaluatedBy = evaluation.evaluatedBy;
       quality = evaluation.isCorrect ? 3 : 0;
+
+      // Segunda opinión para fill_gap fallados: la respuesta puede ser válida
+      // aunque no coincida literalmente (variantes regionales, sinónimos, o
+      // matices ajenos al error objetivo). Evita falsos negativos que mandarían
+      // a caja 1 un error ya dominado (§7).
+      const given = (userAnswer ?? "").trim();
+      if (!isCorrect && item.type === "fill_gap" && given.length > 0 && anthropicConfigured()) {
+        try {
+          const verdict = await verifyAlternativeAnswer({
+            title: mistake.title,
+            category: mistake.category,
+            explanation_es: mistake.explanation_es,
+            prompt: item.prompt,
+            answer: item.answer,
+            userAnswer: given,
+          });
+
+          await sb.from("ai_generations").insert({
+            user_id: OWNER_USER_ID,
+            mistake_id: item.mistake_id,
+            kind: "verify",
+            model: GENERATION_MODEL,
+            input_tokens: verdict.usage.input_tokens,
+            output_tokens: verdict.usage.output_tokens,
+            cache_read_tokens: verdict.usage.cache_read_tokens,
+            cache_creation_tokens: verdict.usage.cache_creation_tokens,
+            items_inserted: 0,
+          });
+
+          if (verdict.isValid) {
+            isCorrect = true;
+            isTypo = false;
+            quality = 3;
+            evaluatedBy = "llm";
+            feedbackEs = verdict.reasonEs || "También es válido.";
+            acceptedAlternative = given;
+          }
+        } catch (e) {
+          // Si falla la verificación, mantenemos el veredicto original.
+          console.error("verifyAlternativeAnswer", item.id, e);
+        }
+      }
     }
 
     // 5. Registrar la review (append-only).
@@ -141,11 +187,19 @@ export async function POST(request: Request) {
     const { error: upErr } = await sb.from("review_state").update(next).eq("mistake_id", item.mistake_id);
     if (upErr) throw upErr;
 
-    // 8. Incrementar times_served del ítem servido.
-    const { error: tsErr } = await sb
-      .from("items")
-      .update({ times_served: item.times_served + 1 })
-      .eq("id", item.id);
+    // 8. Incrementar times_served del ítem servido y, si la IA aceptó una
+    //    respuesta alternativa, memorizarla para no volver a consultarla.
+    const itemUpdate: { times_served: number; alternatives?: string[] } = {
+      times_served: item.times_served + 1,
+    };
+    if (acceptedAlternative) {
+      const current = item.alternatives ?? [];
+      const already = current.some(
+        (a) => a.trim().toLowerCase() === acceptedAlternative!.toLowerCase()
+      );
+      if (!already) itemUpdate.alternatives = [...current, acceptedAlternative];
+    }
+    const { error: tsErr } = await sb.from("items").update(itemUpdate).eq("id", item.id);
     if (tsErr) throw tsErr;
 
     const result: ReviewResult = {
