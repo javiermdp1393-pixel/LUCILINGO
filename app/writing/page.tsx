@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { CATEGORY_LABELS } from "@/lib/constants";
+import { CopyButton } from "./CopyButton";
 import type { WritingIssue } from "@/lib/types";
 
 type Phase = "write" | "evaluating" | "review" | "accepting" | "done";
@@ -118,6 +119,13 @@ export default function WritingPage() {
             eliges qué errores añadir a tu log.
           </p>
 
+          <Link
+            href="/writing/history"
+            className="mt-2 inline-block text-sm text-brand-ink underline underline-offset-2"
+          >
+            Ver correcciones anteriores
+          </Link>
+
           {brief && (
             <div className="mt-4 rounded-2xl border border-brand/30 bg-brand/5 px-4 py-3 text-sm">
               <span className="font-semibold text-brand-ink">Consigna:</span> {brief}
@@ -157,9 +165,12 @@ export default function WritingPage() {
         <>
           <section className="mt-5">
             <h2 className="text-sm font-semibold text-muted">Texto corregido</h2>
-            <p className="mt-2 rounded-2xl border border-border bg-surface px-4 py-3 text-base leading-relaxed">
+            <p className="mt-2 whitespace-pre-wrap rounded-2xl border border-border bg-surface px-4 py-3 text-base leading-relaxed">
               {corrected}
             </p>
+            <div className="mt-3">
+              <CopyButton text={corrected} />
+            </div>
           </section>
 
           <section className="mt-6">
@@ -241,12 +252,28 @@ export default function WritingPage() {
               Genera variantes en Ajustes para poder practicarlos.
             </p>
           )}
+
+          {/* El texto corregido sigue aquí: es lo que venías a buscar si el
+              objetivo era enviar el correo. */}
+          <section className="mt-6 w-full text-left">
+            <h2 className="text-sm font-semibold text-muted">Tu texto corregido</h2>
+            <p className="mt-2 whitespace-pre-wrap rounded-2xl border border-border bg-surface px-4 py-3 text-base leading-relaxed">
+              {corrected}
+            </p>
+            <div className="mt-3">
+              <CopyButton text={corrected} />
+            </div>
+          </section>
+
           <div className="mt-6 flex w-full flex-col gap-3">
             <Link
               href="/settings"
               className="flex min-h-12 items-center justify-center rounded-2xl bg-brand text-base font-semibold text-white"
             >
               Ir a generar variantes
+            </Link>
+            <Link href="/writing/history" className="text-center text-sm text-brand-ink underline">
+              Ver correcciones anteriores
             </Link>
             <Link href="/" className="text-center text-sm text-brand-ink underline">
               Volver al inicio
