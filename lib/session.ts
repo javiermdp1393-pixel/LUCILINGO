@@ -1,5 +1,13 @@
 import { supabaseAdmin } from "./supabaseAdmin";
-import { OWNER_USER_ID, SESSION_SIZE, MODE_ITEM_TYPES } from "./constants";
+import {
+  OWNER_USER_ID,
+  SESSION_SIZE,
+  TRANSLATIONS_PER_SESSION,
+  TRANSLATE_SESSION_SIZE,
+  CLASSIC_ITEM_TYPES,
+  TRANSLATE_ITEM_TYPES,
+} from "./constants";
+import { interleave } from "./interleave";
 import type {
   SessionItem,
   MistakeCategory,
@@ -42,34 +50,34 @@ interface MistakeRow {
   severity: SeverityLevel;
 }
 
-/**
- * Construye la cola de una sesión (§5.3). Llama a la función SQL
- * build_session_queue y monta los SessionItem SIN filtrar la respuesta
- * correcta al cliente. Para multiple_choice baraja answer + distractores.
- *
- * El modo decide qué tipos de ejercicio entran: «practice» los tres clásicos,
- * «translate» solo traducción ES → EN. La prioridad (vencidos, nuevos, refresco)
- * y el estado Leitner son los mismos en ambos.
- */
-export async function buildSessionItems(mode: SessionMode = "practice"): Promise<SessionItem[]> {
+/** Una pasada de la cola: pide N ítems de ciertos tipos, excluyendo errores ya elegidos. */
+async function queue(limit: number, types: string[], exclude: string[]): Promise<QueueRow[]> {
+  if (limit <= 0) return [];
   const sb = supabaseAdmin();
-
-  const { data: queue, error } = await sb.rpc("build_session_queue", {
+  const { data, error } = await sb.rpc("build_session_queue", {
     p_user_id: OWNER_USER_ID,
-    p_limit: SESSION_SIZE,
-    p_types: MODE_ITEM_TYPES[mode] ?? MODE_ITEM_TYPES.practice,
+    p_limit: limit,
+    p_types: types,
+    p_exclude: exclude,
   });
   if (error) throw error;
+  return (data ?? []) as QueueRow[];
+}
 
-  const rows = (queue ?? []) as QueueRow[];
+/** Hidrata las filas de la cola con el enunciado, sin filtrar la respuesta al cliente. */
+async function hydrate(rows: QueueRow[]): Promise<SessionItem[]> {
   if (rows.length === 0) return [];
-
-  const itemIds = rows.map((r) => r.item_id);
-  const mistakeIds = rows.map((r) => r.mistake_id);
+  const sb = supabaseAdmin();
 
   const [{ data: items, error: e2 }, { data: mistakes, error: e3 }] = await Promise.all([
-    sb.from("items").select("id, mistake_id, type, prompt, answer, distractors, hint").in("id", itemIds),
-    sb.from("mistakes").select("id, ref, title, category, severity").in("id", mistakeIds),
+    sb
+      .from("items")
+      .select("id, mistake_id, type, prompt, answer, distractors, hint")
+      .in("id", rows.map((r) => r.item_id)),
+    sb
+      .from("mistakes")
+      .select("id, ref, title, category, severity")
+      .in("id", rows.map((r) => r.mistake_id)),
   ]);
   if (e2) throw e2;
   if (e3) throw e3;
@@ -101,6 +109,33 @@ export async function buildSessionItems(mode: SessionMode = "practice"): Promise
     }
     result.push(base);
   }
-
   return result;
+}
+
+/**
+ * Construye la cola de una sesión (§5.3).
+ *
+ * La sesión diaria («daily») es una sola: 15 ítems de los que 3 son de
+ * traducción ES → EN, repartidos a lo largo de la cola. Se montan en dos
+ * pasadas —primero las traducciones, luego el resto excluyendo esos errores—
+ * para que un mismo error no salga dos veces en la misma sesión. Si no hay
+ * traducciones disponibles, la sesión se completa con ejercicios clásicos.
+ *
+ * «translate» es la sesión opcional de solo traducción, más corta.
+ */
+export async function buildSessionItems(mode: SessionMode = "daily"): Promise<SessionItem[]> {
+  if (mode === "translate") {
+    return hydrate(await queue(TRANSLATE_SESSION_SIZE, TRANSLATE_ITEM_TYPES, []));
+  }
+
+  const translateRows = await queue(TRANSLATIONS_PER_SESSION, TRANSLATE_ITEM_TYPES, []);
+  const classicRows = await queue(
+    SESSION_SIZE - translateRows.length,
+    CLASSIC_ITEM_TYPES,
+    translateRows.map((r) => r.mistake_id)
+  );
+
+  const [translate, classic] = await Promise.all([hydrate(translateRows), hydrate(classicRows)]);
+
+  return interleave(classic, translate).map((item, i) => ({ ...item, ord: i + 1 }));
 }
