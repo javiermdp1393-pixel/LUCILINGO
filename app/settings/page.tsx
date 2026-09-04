@@ -4,7 +4,12 @@ import { OWNER_USER_ID } from "@/lib/constants";
 import { anthropicConfigured } from "@/lib/generateItems";
 import { notionConfigured } from "@/lib/notionSync";
 import { computeCostUsd } from "@/lib/constants";
-import { GenerateVariantsButton, BackfillHintsButton, SyncNotionButton } from "./SettingsActions";
+import {
+  GenerateVariantsButton,
+  BackfillHintsButton,
+  SyncNotionButton,
+  GenerateTranslationsButton,
+} from "./SettingsActions";
 
 interface UsageRow {
   input_tokens: number;
@@ -32,6 +37,8 @@ export default async function SettingsPage() {
   let totalCostUsd = 0;
   let totalCalls = 0;
   let hintsMissing = 0;
+  let translationsMissing = 0;
+  let translationItems = 0;
   let notionLastRun: string | null = null;
   try {
     const sb = supabaseAdmin();
@@ -41,24 +48,33 @@ export default async function SettingsPage() {
       .eq("id", 1)
       .single<{ last_run_at: string | null }>();
     notionLastRun = syncRes.data?.last_run_at ?? null;
-    const [aiRes, needingRes, flaggedRes, usageRes, hintsRes] = await Promise.all([
-      sb.from("items").select("id", { count: "exact", head: true }).eq("generated_by", "ai"),
-      sb.rpc("mistakes_needing_items", { p_user_id: OWNER_USER_ID }),
-      sb.from("items").select("id", { count: "exact", head: true }).eq("status", "flagged"),
-      sb
-        .from("ai_generations")
-        .select("input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens"),
-      sb
-        .from("items")
-        .select("id", { count: "exact", head: true })
-        .is("hint", null)
-        .eq("status", "active")
-        .in("type", ["fill_gap", "correct_sentence"]),
-    ]);
+    const [aiRes, needingRes, flaggedRes, usageRes, hintsRes, transNeedRes, transItemsRes] =
+      await Promise.all([
+        sb.from("items").select("id", { count: "exact", head: true }).eq("generated_by", "ai"),
+        sb.rpc("mistakes_needing_items", { p_user_id: OWNER_USER_ID }),
+        sb.from("items").select("id", { count: "exact", head: true }).eq("status", "flagged"),
+        sb
+          .from("ai_generations")
+          .select("input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens"),
+        sb
+          .from("items")
+          .select("id", { count: "exact", head: true })
+          .is("hint", null)
+          .eq("status", "active")
+          .in("type", ["fill_gap", "correct_sentence"]),
+        sb.rpc("mistakes_needing_translations", { p_user_id: OWNER_USER_ID }),
+        sb
+          .from("items")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "active")
+          .eq("type", "translate_es_en"),
+      ]);
     aiItems = aiRes.count ?? 0;
     flagged = flaggedRes.count ?? 0;
     needingCount = Array.isArray(needingRes.data) ? needingRes.data.length : 0;
     hintsMissing = hintsRes.count ?? 0;
+    translationsMissing = Array.isArray(transNeedRes.data) ? transNeedRes.data.length : 0;
+    translationItems = transItemsRes.count ?? 0;
 
     const rows = (usageRes.data ?? []) as UsageRow[];
     totalCalls = rows.length;
@@ -153,6 +169,27 @@ export default async function SettingsPage() {
             <div className="text-xs text-muted">ejercicios sin pista</div>
           </div>
           <BackfillHintsButton disabled={!hasKey} />
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold text-muted">Traducción ES → EN</h2>
+        <p className="mt-1 text-sm text-foreground">
+          Frases en castellano cuya traducción natural obliga a aplicar la regla que fallas.
+          Alimentan el modo <em>Traducir</em> y el mismo sistema de repaso.
+        </p>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="rounded-2xl border border-border bg-surface px-4 py-3 text-center">
+            <div className="text-2xl font-bold tabular-nums">{translationsMissing}</div>
+            <div className="text-xs text-muted">errores sin traducciones</div>
+          </div>
+          <div className="rounded-2xl border border-border bg-surface px-4 py-3 text-center">
+            <div className="text-2xl font-bold tabular-nums">{translationItems}</div>
+            <div className="text-xs text-muted">frases para traducir</div>
+          </div>
+        </div>
+        <div className="mt-4">
+          <GenerateTranslationsButton disabled={!hasKey} />
         </div>
       </section>
 

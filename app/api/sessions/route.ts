@@ -2,14 +2,19 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { buildSessionItems } from "@/lib/session";
 import { OWNER_USER_ID } from "@/lib/constants";
+import type { SessionMode } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // POST /api/sessions → crea una sesión y devuelve la cola de ítems (§10).
-export async function POST() {
+// Body opcional: { mode: "practice" | "translate" }.
+export async function POST(request: Request) {
   try {
-    const items = await buildSessionItems();
+    const body = (await request.json().catch(() => ({}))) as { mode?: string };
+    const mode: SessionMode = body.mode === "translate" ? "translate" : "practice";
+
+    const items = await buildSessionItems(mode);
 
     if (items.length === 0) {
       return NextResponse.json({ sessionId: null, items: [] });

@@ -24,6 +24,7 @@ function normalizePrompt(s: string): string {
  * Validación automática antes de guardar un ítem generado (§5.2). Filtra lo
  * estructural, no lo semántico (para eso está el botón de flag). Descarta si:
  * - fill_gap sin exactamente un ___
+ * - translate_es_en con huecos, o con la traducción inglesa ya en el enunciado
  * - la respuesta aparece literalmente en el prompt (fill_gap / multiple_choice)
  * - algún distractor coincide con la respuesta o con otro distractor
  * - multiple_choice con menos de 3 distractores
@@ -47,6 +48,17 @@ export function validateItem(item: CandidateItem, existingPrompts: string[]): Va
     if (gaps !== 1) {
       return { valid: false, reason: `fill_gap debe tener exactamente un ___ (tiene ${gaps})` };
     }
+    if (prompt.toLowerCase().includes(answer.toLowerCase())) {
+      return { valid: false, reason: "la respuesta aparece en el prompt" };
+    }
+  }
+
+  if (item.type === "translate_es_en") {
+    // El enunciado es la frase EN CASTELLANO; la respuesta, su versión inglesa.
+    if (prompt.includes("___")) {
+      return { valid: false, reason: "translate_es_en no lleva huecos" };
+    }
+    // Si la traducción inglesa ya asoma en el enunciado, el ejercicio se regala.
     if (prompt.toLowerCase().includes(answer.toLowerCase())) {
       return { valid: false, reason: "la respuesta aparece en el prompt" };
     }

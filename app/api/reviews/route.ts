@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { evaluateAnswer } from "@/lib/evaluate";
 import { computeNextState } from "@/lib/leitner";
 import { evaluateOpenAnswer } from "@/lib/evaluateOpen";
+import { evaluateTranslation } from "@/lib/evaluateTranslation";
 import { verifyAlternativeAnswer } from "@/lib/verifyAlternative";
 import { anthropicConfigured, GENERATION_MODEL } from "@/lib/generateItems";
 import { OWNER_USER_ID } from "@/lib/constants";
@@ -43,7 +44,9 @@ export async function POST(request: Request) {
     // 2. Error asociado (para el feedback: explicación y frase original).
     const { data: mistake, error: mErr } = await sb
       .from("mistakes")
-      .select("id, title, category, severity, explanation_es, original_sentence, correct_form")
+      .select(
+        "id, title, category, severity, explanation_es, original_sentence, correct_form, wrong_form"
+      )
       .eq("id", item.mistake_id)
       .single<{
         id: string;
@@ -53,6 +56,7 @@ export async function POST(request: Request) {
         explanation_es: string;
         original_sentence: string | null;
         correct_form: string | null;
+        wrong_form: string | null;
       }>();
     if (mErr || !mistake) {
       return NextResponse.json({ error: "Error asociado no encontrado." }, { status: 404 });
@@ -80,7 +84,45 @@ export async function POST(request: Request) {
     // no volver a preguntar por ella (el sistema aprende y gasta menos).
     let acceptedAlternative: string | null = null;
 
-    if (item.type === "correct_sentence" && anthropicConfigured()) {
+    if (item.type === "translate_es_en" && anthropicConfigured()) {
+      // Una frase tiene muchas traducciones válidas: comparar contra la de
+      // referencia daría falsos negativos constantes. Juzga el modelo.
+      const evalResult = await evaluateTranslation({
+        title: mistake.title,
+        category: mistake.category,
+        explanation_es: mistake.explanation_es,
+        wrongForm: mistake.wrong_form,
+        promptEs: item.prompt,
+        answer: item.answer,
+        alternatives: item.alternatives ?? [],
+        userAnswer: userAnswer ?? "",
+      });
+      isCorrect = evalResult.isCorrect;
+      evaluatedBy = "llm";
+      quality = evalResult.quality;
+      otherIssues = evalResult.otherIssues;
+
+      // Lo que más enseña es ver SU frase pulida, no solo la de referencia.
+      const natural = evalResult.naturalVersion;
+      const showNatural =
+        natural && natural.toLowerCase() !== (userAnswer ?? "").trim().toLowerCase();
+      feedbackEs =
+        [evalResult.feedbackEs, showNatural ? `Versión natural: “${natural}”` : ""]
+          .filter(Boolean)
+          .join(" ") || null;
+
+      await sb.from("ai_generations").insert({
+        user_id: OWNER_USER_ID,
+        mistake_id: item.mistake_id,
+        kind: "translate_eval",
+        model: GENERATION_MODEL,
+        input_tokens: evalResult.usage.input_tokens,
+        output_tokens: evalResult.usage.output_tokens,
+        cache_read_tokens: evalResult.usage.cache_read_tokens,
+        cache_creation_tokens: evalResult.usage.cache_creation_tokens,
+        items_inserted: 0,
+      });
+    } else if (item.type === "correct_sentence" && anthropicConfigured()) {
       const evalResult = await evaluateOpenAnswer({
         title: mistake.title,
         category: mistake.category,

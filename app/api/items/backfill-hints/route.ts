@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { OWNER_USER_ID, computeCostUsd } from "@/lib/constants";
 import { anthropicConfigured, GENERATION_MODEL } from "@/lib/generateItems";
 import { generateHintForItem } from "@/lib/generateHint";
+import { acquireJobLock, releaseJobLock, JOB_BUSY_MESSAGE } from "@/lib/jobLock";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,9 +23,15 @@ interface ItemRow {
 
 // POST /api/items/backfill-hints
 export async function POST() {
+  let locked = false;
   try {
     if (!anthropicConfigured()) {
       return NextResponse.json({ error: "Falta ANTHROPIC_API_KEY en el servidor." }, { status: 400 });
+    }
+
+    locked = await acquireJobLock("backfill_hints");
+    if (!locked) {
+      return NextResponse.json({ error: JOB_BUSY_MESSAGE }, { status: 409 });
     }
 
     const sb = supabaseAdmin();
@@ -98,5 +105,7 @@ export async function POST() {
   } catch (err) {
     console.error("POST /api/items/backfill-hints", err);
     return NextResponse.json({ error: "No se pudieron generar las pistas." }, { status: 500 });
+  } finally {
+    if (locked) await releaseJobLock("backfill_hints");
   }
 }
