@@ -1,63 +1,40 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { OWNER_USER_ID, computeCostUsd } from "@/lib/constants";
-import {
-  anthropicConfigured,
-  generateItemsForMistake,
-  GENERATION_MODEL,
-  type MistakeForPrompt,
-} from "@/lib/generateItems";
-import { validateItem, type CandidateItem } from "@/lib/validateItem";
+import { anthropicConfigured, GENERATION_MODEL, type MistakeForPrompt } from "@/lib/generateItems";
+import { generateTranslationsForMistake } from "@/lib/generateTranslations";
+import { validateItem } from "@/lib/validateItem";
 import { acquireJobLock, releaseJobLock, JOB_BUSY_MESSAGE } from "@/lib/jobLock";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-// Máximo de errores por llamada, acotado para no rozar el timeout de Vercel
-// (Hobby = 60s). El botón indica cuántos quedan para volver a pulsar.
+// Por lote, para no rozar el timeout. El botón indica cuántos quedan.
 const MAX_BATCH = 6;
 
-interface GenerateBody {
-  mistakeId?: string;
-  all?: boolean;
-  one?: boolean; // prueba: genera solo para el primer error que lo necesite
-}
-
-// POST /api/items/generate → genera variantes con IA (batch), valida y guarda (§5.2).
-export async function POST(request: Request) {
+// POST /api/items/generate-translations → genera ejercicios de traducción
+// ES → EN para los errores que aún no tienen suficientes.
+export async function POST() {
   let locked = false;
   try {
     if (!anthropicConfigured()) {
-      return NextResponse.json(
-        { error: "Falta ANTHROPIC_API_KEY en el servidor." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Falta ANTHROPIC_API_KEY en el servidor." }, { status: 400 });
     }
 
-    // Cerrojo: dos ejecuciones a la vez leerían la misma lista de pendientes y
-    // generarían ejercicios por duplicado, pagando dos veces la API.
-    locked = await acquireJobLock("generate_items");
+    locked = await acquireJobLock("generate_translations");
     if (!locked) {
       return NextResponse.json({ error: JOB_BUSY_MESSAGE }, { status: 409 });
     }
 
-    const body = (await request.json().catch(() => ({}))) as GenerateBody;
     const sb = supabaseAdmin();
 
-    // 1. Errores objetivo.
-    let mistakeIds: string[] = [];
-    if (body.mistakeId) {
-      mistakeIds = [body.mistakeId];
-    } else if (body.all || body.one) {
-      const { data, error } = await sb.rpc("mistakes_needing_items", { p_user_id: OWNER_USER_ID });
-      if (error) throw error;
-      mistakeIds = ((data ?? []) as { mistake_id: string }[]).map((r) => r.mistake_id);
-      if (body.one) mistakeIds = mistakeIds.slice(0, 1);
-    } else {
-      return NextResponse.json({ error: "Indica mistakeId, one o all." }, { status: 400 });
-    }
+    const { data, error } = await sb.rpc("mistakes_needing_translations", {
+      p_user_id: OWNER_USER_ID,
+    });
+    if (error) throw error;
 
+    const mistakeIds = ((data ?? []) as { mistake_id: string }[]).map((r) => r.mistake_id);
     const targets = mistakeIds.slice(0, MAX_BATCH);
     const remaining = Math.max(0, mistakeIds.length - targets.length);
 
@@ -66,7 +43,6 @@ export async function POST(request: Request) {
     const rejectReasons: Record<string, number> = {};
     const totalTokens = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 };
 
-    // 2. Por cada error: generar, validar, guardar.
     for (const mistakeId of targets) {
       const { data: mistake, error: mErr } = await sb
         .from("mistakes")
@@ -75,21 +51,24 @@ export async function POST(request: Request) {
         .single<MistakeForPrompt>();
       if (mErr || !mistake) continue;
 
+      // Solo las frases en castellano ya usadas para este error: son el espacio
+      // donde puede repetirse, no los huecos ni las frases a corregir.
       const { data: existing } = await sb
         .from("items")
         .select("prompt")
         .eq("mistake_id", mistakeId)
+        .eq("type", "translate_es_en")
         .eq("status", "active");
       const existingPrompts = ((existing ?? []) as { prompt: string }[]).map((r) => r.prompt);
 
-      let candidates: CandidateItem[] = [];
+      let candidates: Awaited<ReturnType<typeof generateTranslationsForMistake>>["items"] = [];
       let usage = { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 };
       try {
-        const gen = await generateItemsForMistake(mistake, existingPrompts);
+        const gen = await generateTranslationsForMistake(mistake, existingPrompts);
         candidates = gen.items;
         usage = gen.usage;
       } catch (e) {
-        console.error("generateItemsForMistake", mistakeId, e);
+        console.error("generateTranslationsForMistake", mistakeId, e);
         continue;
       }
 
@@ -98,21 +77,8 @@ export async function POST(request: Request) {
       totalTokens.cacheRead += usage.cache_read_tokens;
       totalTokens.cacheCreation += usage.cache_creation_tokens;
 
-      const toInsert: {
-        mistake_id: string;
-        type: string;
-        prompt: string;
-        answer: string;
-        alternatives: string[];
-        distractors: string[];
-        hint: string | null;
-        status: string;
-        generated_by: string;
-        model: string;
-      }[] = [];
-
-      // Validamos contra los existentes + los ya aceptados en esta tanda.
       const seenPrompts = [...existingPrompts];
+      const toInsert = [];
       for (const c of candidates) {
         const result = validateItem(c, seenPrompts);
         if (!result.valid) {
@@ -122,11 +88,11 @@ export async function POST(request: Request) {
         }
         toInsert.push({
           mistake_id: mistakeId,
-          type: c.type,
+          type: "translate_es_en",
           prompt: c.prompt.trim(),
           answer: c.answer.trim(),
           alternatives: (c.alternatives ?? []).map((s) => s.trim()).filter(Boolean),
-          distractors: c.type === "multiple_choice" ? (c.distractors ?? []).map((s) => s.trim()).filter(Boolean) : [],
+          distractors: [],
           hint: c.hint?.trim() ? c.hint.trim() : null,
           status: "active",
           generated_by: "ai",
@@ -141,11 +107,10 @@ export async function POST(request: Request) {
         inserted += toInsert.length;
       }
 
-      // Registrar el consumo de esta llamada (contador de gasto).
       await sb.from("ai_generations").insert({
         user_id: OWNER_USER_ID,
         mistake_id: mistakeId,
-        kind: "generate",
+        kind: "translate_gen",
         model: GENERATION_MODEL,
         input_tokens: usage.input_tokens,
         output_tokens: usage.output_tokens,
@@ -168,13 +133,12 @@ export async function POST(request: Request) {
       rejected,
       rejectReasons,
       remaining,
-      tokens: totalTokens,
       costUsd,
     });
   } catch (err) {
-    console.error("POST /api/items/generate", err);
-    return NextResponse.json({ error: "No se pudieron generar los ejercicios." }, { status: 500 });
+    console.error("POST /api/items/generate-translations", err);
+    return NextResponse.json({ error: "No se pudieron generar las traducciones." }, { status: 500 });
   } finally {
-    if (locked) await releaseJobLock("generate_items");
+    if (locked) await releaseJobLock("generate_translations");
   }
 }

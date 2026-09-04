@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { notionConfigured, fetchNotionPages, mapPage, type NotionMistake } from "@/lib/notionSync";
+import { acquireJobLock, releaseJobLock, JOB_BUSY_MESSAGE } from "@/lib/jobLock";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,9 +11,17 @@ export const maxDuration = 300;
 // Upsert por notion_page_id: crea los nuevos (con su item inicial) y actualiza
 // los campos de los existentes. No toca items ni review_state de los existentes.
 export async function POST() {
+  let locked = false;
   try {
     if (!notionConfigured()) {
       return NextResponse.json({ error: "Falta NOTION_TOKEN en el servidor." }, { status: 400 });
+    }
+
+    // Cerrojo: dos syncs a la vez leerían el mismo last_sync_at y ambos verían
+    // las mismas páginas como nuevas, duplicando errores en el log.
+    locked = await acquireJobLock("sync_notion");
+    if (!locked) {
+      return NextResponse.json({ error: JOB_BUSY_MESSAGE }, { status: 409 });
     }
 
     const sb = supabaseAdmin();
@@ -137,5 +146,7 @@ export async function POST() {
     console.error("POST /api/sync/notion", err);
     const message = err instanceof Error ? err.message : "Error desconocido";
     return NextResponse.json({ error: `No se pudo sincronizar: ${message}` }, { status: 500 });
+  } finally {
+    if (locked) await releaseJobLock("sync_notion");
   }
 }

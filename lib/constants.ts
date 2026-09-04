@@ -52,6 +52,7 @@ export const ITEM_TYPE_LABELS: Record<string, string> = {
   fill_gap: "Rellena el hueco",
   multiple_choice: "Elige la opción",
   correct_sentence: "Corrige la frase",
+  translate_es_en: "Traduce al inglés",
 };
 
 // Instrucción que se muestra en la sesión según el tipo de ejercicio.
@@ -59,7 +60,18 @@ export const TASK_INSTRUCTIONS: Record<string, string> = {
   fill_gap: "Rellena el hueco",
   multiple_choice: "Elige la opción correcta",
   correct_sentence: "Reescribe la frase corrigiendo el error",
+  translate_es_en: "Traduce esta frase al inglés",
 };
+
+// Tipos de ejercicio que sirve cada modo de sesión. La traducción va aparte
+// porque es producción pura (ES → EN) y pide otra cabeza que rellenar huecos.
+export const MODE_ITEM_TYPES: Record<string, string[]> = {
+  practice: ["fill_gap", "multiple_choice", "correct_sentence"],
+  translate: ["translate_es_en"],
+};
+
+// Traducciones objetivo por error (las genera el botón de Ajustes).
+export const TRANSLATIONS_PER_MISTAKE = 2;
 
 // Precios de claude-sonnet-5 en USD por millón de tokens (tarifa de
 // introducción vigente hasta 2026-08-31; después input 3 / output 15).

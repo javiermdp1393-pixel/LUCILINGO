@@ -1,6 +1,12 @@
 import { supabaseAdmin } from "./supabaseAdmin";
-import { OWNER_USER_ID, SESSION_SIZE } from "./constants";
-import type { SessionItem, MistakeCategory, SeverityLevel, ItemType } from "./types";
+import { OWNER_USER_ID, SESSION_SIZE, MODE_ITEM_TYPES } from "./constants";
+import type {
+  SessionItem,
+  MistakeCategory,
+  SeverityLevel,
+  ItemType,
+  SessionMode,
+} from "./types";
 
 /** Baraja una copia del array (Fisher-Yates). */
 function shuffle<T>(arr: T[]): T[] {
@@ -40,13 +46,18 @@ interface MistakeRow {
  * Construye la cola de una sesión (§5.3). Llama a la función SQL
  * build_session_queue y monta los SessionItem SIN filtrar la respuesta
  * correcta al cliente. Para multiple_choice baraja answer + distractores.
+ *
+ * El modo decide qué tipos de ejercicio entran: «practice» los tres clásicos,
+ * «translate» solo traducción ES → EN. La prioridad (vencidos, nuevos, refresco)
+ * y el estado Leitner son los mismos en ambos.
  */
-export async function buildSessionItems(): Promise<SessionItem[]> {
+export async function buildSessionItems(mode: SessionMode = "practice"): Promise<SessionItem[]> {
   const sb = supabaseAdmin();
 
   const { data: queue, error } = await sb.rpc("build_session_queue", {
     p_user_id: OWNER_USER_ID,
     p_limit: SESSION_SIZE,
+    p_types: MODE_ITEM_TYPES[mode] ?? MODE_ITEM_TYPES.practice,
   });
   if (error) throw error;
 

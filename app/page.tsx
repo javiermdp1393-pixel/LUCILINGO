@@ -22,6 +22,17 @@ async function getStats(): Promise<Stats> {
   return row ?? { due_count: 0, new_count: 0, active_count: 0, mastered_count: 0, streak: 0 };
 }
 
+/** ¿Hay ya frases de traducción generadas? Si no, no ofrecemos el modo. */
+async function hasTranslations(): Promise<boolean> {
+  const sb = supabaseAdmin();
+  const { count } = await sb
+    .from("items")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "active")
+    .eq("type", "translate_es_en");
+  return (count ?? 0) > 0;
+}
+
 function StatCard({ value, label }: { value: number; label: string }) {
   return (
     <div className="rounded-2xl border border-border bg-surface px-3 py-3 text-center">
@@ -34,8 +45,9 @@ function StatCard({ value, label }: { value: number; label: string }) {
 export default async function HomePage() {
   let stats: Stats;
   let dbError = false;
+  let translateReady = false;
   try {
-    stats = await getStats();
+    [stats, translateReady] = await Promise.all([getStats(), hasTranslations()]);
   } catch {
     dbError = true;
     stats = { due_count: 0, new_count: 0, active_count: 0, mastered_count: 0, streak: 0 };
@@ -92,6 +104,20 @@ export default async function HomePage() {
             ? `${Math.min(stats.due_count, 10)} de tus ${stats.due_count} errores vencidos · ~5 min`
             : "Sin vencimientos: repasarás los más próximos"}
         </p>
+
+        {translateReady && (
+          <>
+            <Link
+              href="/session/translate"
+              className="mt-3 flex min-h-12 w-full items-center justify-center rounded-2xl border border-brand px-6 text-base font-semibold text-brand-ink transition active:scale-[0.99]"
+            >
+              Traducir ES → EN
+            </Link>
+            <p className="mt-2 text-center text-xs text-muted">
+              Frases sueltas en castellano · el sentido en el que fallas
+            </p>
+          </>
+        )}
 
         <nav className="mt-6 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm">
           <Link href="/progress" className="text-brand-ink underline-offset-4 hover:underline">
