@@ -8,11 +8,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // POST /api/sessions → crea una sesión y devuelve la cola de ítems (§10).
-// Body opcional: { mode: "practice" | "translate" }.
+// Body opcional: { mode: "daily" | "translate" }.
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as { mode?: string };
-    const mode: SessionMode = body.mode === "translate" ? "translate" : "practice";
+    const mode: SessionMode = body.mode === "translate" ? "translate" : "daily";
 
     const items = await buildSessionItems(mode);
 

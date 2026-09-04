@@ -1,5 +1,5 @@
 import SessionRunner from "./SessionRunner";
 
 export default function SessionPage() {
-  return <SessionRunner mode="practice" />;
+  return <SessionRunner mode="daily" />;
 }

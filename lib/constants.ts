@@ -4,8 +4,16 @@
 // cuando se añada Supabase Auth real, se sustituye por auth.uid() y se backfillea.
 export const OWNER_USER_ID = "00000000-0000-0000-0000-000000000001";
 
-// Tamaño de la cola de una sesión (§5.3).
-export const SESSION_SIZE = 10;
+// Tamaño de la cola de la sesión diaria (§5.3).
+export const SESSION_SIZE = 15;
+
+// De esos 15, cuántos son de traducción ES → EN. Traducir cuesta ~48s de
+// mediana frente a los 8-19s del resto, así que tres es lo que cabe sin que la
+// sesión se vaya de los ~6-7 minutos.
+export const TRANSLATIONS_PER_SESSION = 3;
+
+// La sesión de solo traducción es más corta por el mismo motivo.
+export const TRANSLATE_SESSION_SIZE = 8;
 
 // Leitner de 5 cajas. Intervalo base en días por caja (§6).
 export const BOX_INTERVALS = [0, 1, 3, 7, 16, 35] as const;
@@ -63,12 +71,9 @@ export const TASK_INSTRUCTIONS: Record<string, string> = {
   translate_es_en: "Traduce esta frase al inglés",
 };
 
-// Tipos de ejercicio que sirve cada modo de sesión. La traducción va aparte
-// porque es producción pura (ES → EN) y pide otra cabeza que rellenar huecos.
-export const MODE_ITEM_TYPES: Record<string, string[]> = {
-  practice: ["fill_gap", "multiple_choice", "correct_sentence"],
-  translate: ["translate_es_en"],
-};
+// La sesión diaria mezcla los tres tipos clásicos con unas pocas traducciones.
+export const CLASSIC_ITEM_TYPES = ["fill_gap", "multiple_choice", "correct_sentence"];
+export const TRANSLATE_ITEM_TYPES = ["translate_es_en"];
 
 // Traducciones objetivo por error (las genera el botón de Ajustes).
 export const TRANSLATIONS_PER_MISTAKE = 2;

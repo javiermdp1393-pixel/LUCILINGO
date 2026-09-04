@@ -35,7 +35,7 @@ function Prompt({ text }: { text: string }) {
   );
 }
 
-export default function SessionRunner({ mode = "practice" }: { mode?: SessionMode }) {
+export default function SessionRunner({ mode = "daily" }: { mode?: SessionMode }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("loading");
   const [sessionId, setSessionId] = useState<string | null>(null);

@@ -17,9 +17,10 @@ export type MistakeCategory =
 export type SeverityLevel = "blocks_meaning" | "unnatural" | "style";
 export type ItemType = "fill_gap" | "multiple_choice" | "correct_sentence" | "translate_es_en";
 
-// Modo de sesión: la práctica normal usa los tres tipos clásicos; «translate»
-// solo traducción castellano → inglés. Ambos alimentan el mismo Leitner.
-export type SessionMode = "practice" | "translate";
+// Modo de sesión: «daily» es la sesión diaria, que mezcla los tres tipos
+// clásicos con unas pocas traducciones; «translate» es la sesión opcional de
+// solo traducción. Ambas alimentan el mismo Leitner.
+export type SessionMode = "daily" | "translate";
 export type ItemStatus = "active" | "retired" | "flagged";
 
 export interface Mistake {
