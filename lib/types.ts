@@ -78,10 +78,13 @@ export interface SessionItem {
   hint?: string | null;
 }
 
-// Otro error detectado en una respuesta abierta (§8.2), a título informativo.
+// Otro error detectado en una respuesta abierta (§8.2): no penaliza la
+// respuesta, pero es un error real y se puede cosechar al log al acabar la
+// sesión, así que viene clasificado como cualquier otro.
 export interface OtherIssue {
   wrong: string;
   correct: string;
+  category: MistakeCategory;
   explanation_es: string;
 }
 

@@ -2,27 +2,34 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { OWNER_USER_ID } from "@/lib/constants";
 import { findExistingMistake, type MistakeCandidate } from "@/lib/matchMistake";
-import type { WritingIssue } from "@/lib/evaluateWriting";
+import type { OtherIssue } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 interface Body {
-  accepted: WritingIssue[];
+  accepted: OtherIssue[];
 }
 
-// POST /api/writings/[id]/accept → convierte los problemas aceptados en mistakes.
-// Si el error ya existe no se duplica: se reinicia su review_state a box 1
-// (volver a cometerlo es la señal más valiosa, §5.4).
+// POST /api/sessions/[id]/harvest → convierte en errores del log los fallos que
+// el usuario cometió de paso durante la sesión (los "otros detalles" que el
+// evaluador detecta y que no penalizan la respuesta).
+//
+// Es el mismo principio que la escritura libre: el contenido se cosecha de
+// errores reales. Antes esos fallos se pintaban en pantalla y se perdían al
+// pasar de pregunta, aunque fueran tan buenos como el error que se practicaba.
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const body = (await request.json()) as Body;
+    const body = (await request.json().catch(() => ({}))) as Body;
     const accepted = Array.isArray(body.accepted) ? body.accepted : [];
+
+    if (accepted.length === 0) {
+      return NextResponse.json({ added: 0, reactivated: 0 });
+    }
 
     const sb = supabaseAdmin();
 
-    // Los candidatos se leen una sola vez: el emparejamiento es en memoria.
     const { data: candidates } = await sb
       .from("mistakes")
       .select("id, wrong_form, category")
@@ -42,7 +49,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const existing = findExistingMistake(wrong, issue.category, pool);
 
       if (existing) {
-        // Reincidencia: reiniciar el repaso a box 1, vencido ya.
+        // Reincidencia: vuelve a caja 1 y vencido ya.
         await sb
           .from("review_state")
           .update({
@@ -60,27 +67,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             user_id: OWNER_USER_ID,
             title: `${wrong} → ${correct}`,
             category: issue.category,
-            source: "free_writing",
+            source: "session",
             wrong_form: wrong,
             correct_form: correct,
             explanation_es: issue.explanation_es ?? "",
-            writing_id: id,
+            session_id: id,
           })
           .select("id, wrong_form, category")
           .single();
         if (insErr) throw insErr;
-        // Entra al pool para que dos problemas del mismo texto que designan el
-        // mismo error no se guarden dos veces.
+        // Entra al pool para que dos fallos iguales de la misma sesión no se
+        // guarden por duplicado.
         if (inserted) pool.push(inserted as MistakeCandidate);
         added += 1;
       }
     }
 
-    await sb.from("writings").update({ status: "processed" }).eq("id", id);
-
     return NextResponse.json({ added, reactivated });
   } catch (err) {
-    console.error("POST /api/writings/[id]/accept", err);
+    console.error("POST /api/sessions/[id]/harvest", err);
     return NextResponse.json({ error: "No se pudieron añadir los errores." }, { status: 500 });
   }
 }

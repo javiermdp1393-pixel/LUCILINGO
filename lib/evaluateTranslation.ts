@@ -1,7 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { GENERATION_MODEL } from "./generateItems";
-import { CATEGORY_LABELS } from "./constants";
+import { CATEGORY_LABELS, MISTAKE_CATEGORIES } from "./constants";
 import type { OtherIssue } from "./types";
 
 // Evaluación de una traducción ES → EN. Una frase tiene muchas traducciones
@@ -26,10 +26,11 @@ const EVAL_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["wrong", "correct", "explanation_es"],
+        required: ["wrong", "correct", "category", "explanation_es"],
         properties: {
           wrong: { type: "string" },
           correct: { type: "string" },
+          category: { type: "string", enum: MISTAKE_CATEGORIES },
           explanation_es: { type: "string" },
         },
       },
@@ -91,7 +92,12 @@ No exijas que coincida con la de referencia: hay muchas formas válidas de tradu
 sinónimos, otro orden, variantes británicas o americanas y giros más o menos formales, siempre
 que sean inglés natural. Si comete el error objetivo, is_correct es false aunque se entienda.
 
-Otros errores distintos del objetivo van en other_issues y NO afectan a is_correct.
+Otros errores distintos del objetivo van en other_issues y NO afectan a is_correct. Estos se le
+ofrecen luego al usuario para añadirlos a su registro de errores, así que tienen que valer por sí
+solos: "wrong" es el fragmento incorrecto MÍNIMO tal cual lo escribió (una o pocas palabras, nunca
+la frase entera), "correct" solo su forma corregida, igual de breve, y "category" una de:
+${MISTAKE_CATEGORIES.join(", ")}. No incluyas aquí simples diferencias de estilo que ya sean
+correctas.
 
 natural_version: cómo diría un nativo LA FRASE DEL USUARIO, corrigiendo lo mínimo. Si su
 traducción ya es natural, repítela tal cual.

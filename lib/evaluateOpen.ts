@@ -1,7 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { GENERATION_MODEL } from "./generateItems";
-import { CATEGORY_LABELS } from "./constants";
+import { CATEGORY_LABELS, MISTAKE_CATEGORIES } from "./constants";
 import type { OtherIssue } from "./types";
 
 // Evaluación de respuesta abierta (correct_sentence y, en el futuro, escritura
@@ -21,10 +21,11 @@ const EVAL_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["wrong", "correct", "explanation_es"],
+        required: ["wrong", "correct", "category", "explanation_es"],
         properties: {
           wrong: { type: "string" },
           correct: { type: "string" },
+          category: { type: "string", enum: MISTAKE_CATEGORIES },
           explanation_es: { type: "string" },
         },
       },
@@ -68,7 +69,12 @@ Respuesta del usuario: ${input.userAnswer}
 Criterio: is_correct es true si el usuario ha corregido EL ERROR OBJETIVO, aunque su frase
 difiera de la de referencia en otros aspectos y aunque introduzca otros errores distintos.
 Los demás errores se listan en other_issues pero NO afectan a is_correct. feedback_es es una o
-dos frases en español. quality va de 0 (nada) a 3 (perfecto).`;
+dos frases en español. quality va de 0 (nada) a 3 (perfecto).
+
+En cada other_issue, "wrong" es el fragmento incorrecto MÍNIMO tal cual lo escribió el usuario
+(una o pocas palabras, no la frase entera) y "correct" solo su forma corregida, igual de breve:
+esos fragmentos se guardan como errores propios y tienen que servir por sí solos. "category" es
+una de: ${MISTAKE_CATEGORIES.join(", ")}.`;
 
   const response = await client.messages.create({
     model: GENERATION_MODEL,
