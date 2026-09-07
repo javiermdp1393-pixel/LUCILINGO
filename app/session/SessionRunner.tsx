@@ -45,7 +45,6 @@ export default function SessionRunner({ mode = "daily" }: { mode?: SessionMode }
   const [result, setResult] = useState<ReviewResult | null>(null);
   const [correctCount, setCorrectCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const [showHint, setShowHint] = useState(false);
 
   const startedAt = useRef<number>(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -127,7 +126,6 @@ export default function SessionRunner({ mode = "daily" }: { mode?: SessionMode }
 
   const next = useCallback(async () => {
     setResult(null);
-    setShowHint(false);
     if (index + 1 < items.length) {
       setAnswer(initialAnswerFor(items[index + 1]));
       setIndex((i) => i + 1);
@@ -218,20 +216,13 @@ export default function SessionRunner({ mode = "daily" }: { mode?: SessionMode }
       </div>
 
       {current.hint && current.type !== "multiple_choice" && (
-        <div className="mt-2 min-h-6">
-          {showHint ? (
-            <p className="text-sm italic text-muted">💡 {current.hint}</p>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShowHint(true)}
-              disabled={phase === "feedback"}
-              className="text-sm text-muted underline underline-offset-2 disabled:opacity-40"
-            >
-              💡 Ver pista
-            </button>
-          )}
-        </div>
+        // key: reinicia el estado de la pista (vista/rehecha) en cada pregunta.
+        <HintBlock
+          key={current.itemId}
+          itemId={current.itemId}
+          hint={current.hint}
+          canReveal={phase !== "feedback"}
+        />
       )}
 
       {/* Zona de respuesta */}
@@ -326,6 +317,80 @@ export default function SessionRunner({ mode = "daily" }: { mode?: SessionMode }
         />
       )}
     </main>
+  );
+}
+
+/**
+ * Pista contextual, oculta tras un botón para no regalar la respuesta.
+ *
+ * Una pista puede ser mala sin que el ejercicio lo sea, así que descartarla es
+ * una acción distinta de marcar el ejercicio como defectuoso: aquí se pide otra
+ * al modelo y se guarda, de modo que la próxima vez que salga el ejercicio ya
+ * venga con la buena.
+ */
+function HintBlock({
+  itemId,
+  hint,
+  canReveal,
+}: {
+  itemId: string;
+  hint: string;
+  canReveal: boolean;
+}) {
+  const [shown, setShown] = useState(false);
+  const [text, setText] = useState(hint);
+  const [rehinting, setRehinting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const rehint = useCallback(async () => {
+    if (rehinting) return;
+    setRehinting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/items/${itemId}/rehint`, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { hint?: string; error?: string };
+      if (!res.ok || !data.hint) {
+        setError(data.error ?? "No se pudo rehacer la pista.");
+        return;
+      }
+      setText(data.hint);
+    } catch {
+      setError("Se ha cortado la conexión.");
+    } finally {
+      setRehinting(false);
+    }
+  }, [itemId, rehinting]);
+
+  if (!shown) {
+    return (
+      <div className="mt-2 min-h-6">
+        <button
+          type="button"
+          onClick={() => setShown(true)}
+          disabled={!canReveal}
+          className="text-sm text-muted underline underline-offset-2 disabled:opacity-40"
+        >
+          💡 Ver pista
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2">
+      <p className="text-sm italic text-muted">💡 {text}</p>
+      <div className="mt-1 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={rehint}
+          disabled={rehinting}
+          className="text-xs text-muted underline underline-offset-2 disabled:opacity-50"
+        >
+          {rehinting ? "Buscando otra pista…" : "↻ Esta pista no me ayuda"}
+        </button>
+        {error && <span className="text-xs text-danger">{error}</span>}
+      </div>
+    </div>
   );
 }
 
