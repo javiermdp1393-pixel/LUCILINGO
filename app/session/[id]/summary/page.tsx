@@ -2,7 +2,9 @@ import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { CATEGORY_LABELS } from "@/lib/constants";
 import { Lucy } from "@/app/components/Lucy";
-import type { MistakeCategory } from "@/lib/types";
+import { normalizeForm } from "@/lib/matchMistake";
+import { HarvestIssues, type HarvestCandidate } from "./HarvestIssues";
+import type { MistakeCategory, OtherIssue } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +13,26 @@ interface ReviewRow {
   is_correct: boolean;
   response_ms: number | null;
   mistake_id: string;
+  user_answer: string | null;
+  other_issues: OtherIssue[] | null;
+}
+
+/**
+ * Fallos cosechables de la sesión, sin repetidos: el mismo desliz cometido en
+ * dos respuestas es un solo error que registrar.
+ */
+function harvestCandidates(rows: ReviewRow[]): HarvestCandidate[] {
+  const byForm = new Map<string, HarvestCandidate>();
+  for (const row of rows) {
+    for (const issue of row.other_issues ?? []) {
+      const wrong = (issue.wrong ?? "").trim();
+      if (!wrong || !issue.category) continue;
+      const key = normalizeForm(wrong);
+      if (!key || byForm.has(key)) continue;
+      byForm.set(key, { ...issue, wrong, userAnswer: (row.user_answer ?? "").trim() });
+    }
+  }
+  return [...byForm.values()];
 }
 
 export default async function SummaryPage({ params }: { params: Promise<{ id: string }> }) {
@@ -19,7 +41,7 @@ export default async function SummaryPage({ params }: { params: Promise<{ id: st
 
   const { data: reviews } = await sb
     .from("reviews")
-    .select("is_correct, response_ms, mistake_id")
+    .select("is_correct, response_ms, mistake_id, user_answer, other_issues")
     .eq("session_id", id);
 
   const rows = (reviews ?? []) as ReviewRow[];
@@ -65,6 +87,7 @@ export default async function SummaryPage({ params }: { params: Promise<{ id: st
   const weak = [...weakSet];
 
   const pct = Math.round((correct / total) * 100);
+  const candidates = harvestCandidates(rows);
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pb-10 pt-10">
@@ -104,6 +127,8 @@ export default async function SummaryPage({ params }: { params: Promise<{ id: st
           </div>
         )}
       </section>
+
+      {candidates.length > 0 && <HarvestIssues sessionId={id} candidates={candidates} />}
 
       <div className="mt-auto pt-10 flex flex-col gap-3">
         <Link

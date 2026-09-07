@@ -210,6 +210,9 @@ export async function POST(request: Request) {
       response_ms: Number.isFinite(responseMs) ? Math.round(responseMs) : null,
       evaluated_by: evaluatedBy,
       feedback_es: feedbackEs,
+      // Se guardan para poder ofrecerlos como cosecha en el resumen: son
+      // errores reales aunque no penalicen esta respuesta.
+      other_issues: otherIssues,
     });
     if (rErr) throw rErr;
 

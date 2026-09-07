@@ -34,6 +34,23 @@ export const MASTERY_MIN_DISTINCT_ITEMS = 3;
 // errata y no desconocimiento de la regla (§7).
 export const TYPO_MAX_DISTANCE = 2;
 
+// Las 12 categorías de la taxonomía, en el orden del funcional. Es la lista
+// que se le pasa al modelo como enum en los esquemas de salida.
+export const MISTAKE_CATEGORIES = [
+  "false_friend",
+  "vocabulary",
+  "preposition",
+  "article",
+  "word_order",
+  "sentence_structure",
+  "verb_tense",
+  "uncountable",
+  "agreement_pronouns",
+  "register_tone",
+  "spelling",
+  "conciseness",
+] as const;
+
 // Etiquetas en español para las 12 categorías de la taxonomía.
 export const CATEGORY_LABELS: Record<string, string> = {
   false_friend: "Falso amigo",
