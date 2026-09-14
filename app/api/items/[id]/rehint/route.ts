@@ -7,6 +7,9 @@ import { hintIsUsable } from "@/lib/hintQuality";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Hasta dos llamadas al modelo: necesita más que el límite por defecto de la
+// plataforma, que es de pocos segundos.
+export const maxDuration = 60;
 
 // Cuántas veces se le pide otra pista al modelo si la que devuelve no sirve
 // (se repite o desvela la respuesta). Con effort bajo cada intento es barato.

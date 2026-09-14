@@ -33,6 +33,47 @@ async function getStats(): Promise<Stats> {
   return (data as Stats[])?.[0] ?? EMPTY_STATS;
 }
 
+interface Resumable {
+  id: string;
+  answered: number;
+  total: number;
+}
+
+/**
+ * Sesión de HOY que quedó a medias y se puede retomar.
+ *
+ * Solo del día en curso: una cola de ayer estaría desfasada, porque el estado
+ * de repaso de esos errores ya ha cambiado. Y solo con alguna respuesta dada:
+ * una sesión abierta y abandonada al instante no es progreso que rescatar.
+ */
+async function getResumable(): Promise<Resumable | null> {
+  const sb = supabaseAdmin();
+
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const { data } = await sb
+    .from("sessions")
+    .select("id, items_total, queue")
+    .eq("user_id", OWNER_USER_ID)
+    .is("finished_at", null)
+    .not("queue", "is", null)
+    .gte("started_at", startOfDay.toISOString())
+    .order("started_at", { ascending: false })
+    .limit(5);
+
+  for (const row of (data ?? []) as { id: string; items_total: number | null; queue: unknown[] }[]) {
+    const total = Array.isArray(row.queue) ? row.queue.length : (row.items_total ?? 0);
+    const { count } = await sb
+      .from("reviews")
+      .select("id", { count: "exact", head: true })
+      .eq("session_id", row.id);
+    const answered = count ?? 0;
+    if (answered > 0 && answered < total) return { id: row.id, answered, total };
+  }
+  return null;
+}
+
 /** ¿Hay ya frases de traducción generadas? Si no, no ofrecemos la sesión suelta. */
 async function hasTranslations(): Promise<boolean> {
   const sb = supabaseAdmin();
@@ -77,8 +118,13 @@ export default async function HomePage() {
   let stats: Stats = EMPTY_STATS;
   let dbError = false;
   let translateReady = false;
+  let resumable: Resumable | null = null;
   try {
-    [stats, translateReady] = await Promise.all([getStats(), hasTranslations()]);
+    [stats, translateReady, resumable] = await Promise.all([
+      getStats(),
+      hasTranslations(),
+      getResumable(),
+    ]);
   } catch {
     dbError = true;
   }
@@ -134,16 +180,40 @@ export default async function HomePage() {
       </section>
 
       <div className="mt-auto pt-8">
-        <Link
-          href="/session"
-          className="flex min-h-14 w-full items-center justify-center rounded-2xl bg-brand px-6 text-lg font-semibold text-white shadow-sm transition active:scale-[0.99]"
-        >
-          Empezar sesión
-        </Link>
-        <p className="mt-2 text-center text-xs text-muted">
-          {SESSION_SIZE} ejercicios
-          {translationsInSession > 0 && <>, {translationsInSession} de traducción</>} · ~6 min
-        </p>
+        {/* Sesión de hoy a medias: retomarla es lo primero que se ofrece. */}
+        {resumable ? (
+          <>
+            <Link
+              href={`/session/${resumable.id}`}
+              className="flex min-h-14 w-full items-center justify-center rounded-2xl bg-brand px-6 text-lg font-semibold text-white shadow-sm transition active:scale-[0.99]"
+            >
+              Retomar sesión
+            </Link>
+            <p className="mt-2 text-center text-xs text-muted">
+              La dejaste en {resumable.answered}/{resumable.total} · te quedan{" "}
+              {resumable.total - resumable.answered}
+            </p>
+            <Link
+              href="/session"
+              className="mt-3 flex min-h-12 w-full items-center justify-center rounded-2xl border border-brand px-6 text-base font-semibold text-brand-ink transition active:scale-[0.99]"
+            >
+              Empezar una nueva
+            </Link>
+          </>
+        ) : (
+          <>
+            <Link
+              href="/session"
+              className="flex min-h-14 w-full items-center justify-center rounded-2xl bg-brand px-6 text-lg font-semibold text-white shadow-sm transition active:scale-[0.99]"
+            >
+              Empezar sesión
+            </Link>
+            <p className="mt-2 text-center text-xs text-muted">
+              {SESSION_SIZE} ejercicios
+              {translationsInSession > 0 && <>, {translationsInSession} de traducción</>} · ~6 min
+            </p>
+          </>
+        )}
 
         <nav className="mt-6 flex flex-wrap justify-center gap-x-5 gap-y-2 text-sm">
           <Link href="/progress" className="text-brand-ink underline-offset-4 hover:underline">

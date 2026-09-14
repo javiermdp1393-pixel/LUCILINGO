@@ -16,6 +16,17 @@ function isLongAnswer(type: SessionItem["type"]): boolean {
   return type === "correct_sentence" || type === "translate_es_en";
 }
 
+/**
+ * Corte para la petición de corrección. `AbortSignal.timeout` no existe en
+ * Safari anteriores al 16, y aquí un fallo dejaría la sesión colgada, que es
+ * justo lo que estamos arreglando: si no está, se va sin límite propio.
+ */
+function timeoutSignal(ms: number): AbortSignal | undefined {
+  return typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+    ? AbortSignal.timeout(ms)
+    : undefined;
+}
+
 type Phase = "loading" | "empty" | "question" | "feedback" | "finishing" | "error";
 
 /** Renderiza el enunciado resaltando el hueco ___ (§9). */
@@ -35,7 +46,18 @@ function Prompt({ text }: { text: string }) {
   );
 }
 
-export default function SessionRunner({ mode = "daily" }: { mode?: SessionMode }) {
+/**
+ * Corre una sesión. Sin `resumeId` crea una nueva; con él retoma una que quedó
+ * a medias, saltando las preguntas ya respondidas (que ya están guardadas en el
+ * servidor, una a una, desde el primer día).
+ */
+export default function SessionRunner({
+  mode = "daily",
+  resumeId,
+}: {
+  mode?: SessionMode;
+  resumeId?: string;
+}) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("loading");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -45,33 +67,49 @@ export default function SessionRunner({ mode = "daily" }: { mode?: SessionMode }
   const [result, setResult] = useState<ReviewResult | null>(null);
   const [correctCount, setCorrectCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [resumedFrom, setResumedFrom] = useState(0);
 
   const startedAt = useRef<number>(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Crea la sesión al montar.
+  // Crea la sesión al montar, o recupera la que se está retomando.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/sessions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode }),
-        });
-        const data = await res.json();
+        const res = resumeId
+          ? await fetch(`/api/sessions/${resumeId}`)
+          : await fetch("/api/sessions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ mode }),
+            });
         if (cancelled) return;
         if (!res.ok) {
           setPhase("error");
           return;
         }
+        const data = (await res.json()) as {
+          sessionId: string | null;
+          items: SessionItem[];
+          startIndex?: number;
+          correctCount?: number;
+        };
+        if (cancelled) return;
         if (!data.sessionId || data.items.length === 0) {
           setPhase("empty");
           return;
         }
+
+        // Al retomar, arrancamos en la primera pregunta sin responder.
+        const start = Math.min(data.startIndex ?? 0, data.items.length - 1);
         setSessionId(data.sessionId);
         setItems(data.items);
-        setAnswer(initialAnswerFor(data.items[0]));
+        setIndex(start);
+        setResumedFrom(start);
+        setCorrectCount(data.correctCount ?? 0);
+        setAnswer(initialAnswerFor(data.items[start]));
         setPhase("question");
         startedAt.current = Date.now();
       } catch {
@@ -81,7 +119,7 @@ export default function SessionRunner({ mode = "daily" }: { mode?: SessionMode }
     return () => {
       cancelled = true;
     };
-  }, [mode]);
+  }, [mode, resumeId]);
 
   const current = items[index];
 
@@ -96,6 +134,10 @@ export default function SessionRunner({ mode = "daily" }: { mode?: SessionMode }
     async (given: string) => {
       if (submitting || !current) return;
       setSubmitting(true);
+      setSubmitError(null);
+      // Guardamos el tiempo de esta respuesta: si hay que reintentar, no
+      // queremos contar también lo que tardó el intento fallido.
+      const elapsed = Date.now() - startedAt.current;
       try {
         const res = await fetch("/api/reviews", {
           method: "POST",
@@ -104,19 +146,28 @@ export default function SessionRunner({ mode = "daily" }: { mode?: SessionMode }
             sessionId,
             itemId: current.itemId,
             userAnswer: given,
-            responseMs: Date.now() - startedAt.current,
+            responseMs: elapsed,
           }),
+          // Corte propio: si el servidor se queda colgado, preferimos avisar y
+          // ofrecer reintentar antes que dejar la pantalla en blanco.
+          signal: timeoutSignal(65_000),
         });
-        const data: ReviewResult = await res.json();
+
+        // Un error de plataforma (504, por ejemplo) devuelve HTML, no JSON: hay
+        // que mirar `res.ok` antes de intentar parsear.
         if (!res.ok) {
-          setPhase("error");
+          setSubmitError("No se ha podido corregir la respuesta.");
           return;
         }
+        const data = (await res.json()) as ReviewResult;
         setResult(data);
         if (data.isCorrect) setCorrectCount((c) => c + 1);
         setPhase("feedback");
       } catch {
-        setPhase("error");
+        // Un fallo puntual (red, timeout) NO debe tirar la sesión: la pregunta
+        // sigue en pantalla con la respuesta escrita y se puede reintentar.
+        // Las respuestas anteriores ya están guardadas en el servidor.
+        setSubmitError("No se ha podido corregir la respuesta.");
       } finally {
         setSubmitting(false);
       }
@@ -126,6 +177,7 @@ export default function SessionRunner({ mode = "daily" }: { mode?: SessionMode }
 
   const next = useCallback(async () => {
     setResult(null);
+    setSubmitError(null);
     if (index + 1 < items.length) {
       setAnswer(initialAnswerFor(items[index + 1]));
       setIndex((i) => i + 1);
@@ -152,8 +204,18 @@ export default function SessionRunner({ mode = "daily" }: { mode?: SessionMode }
   if (phase === "error") {
     return (
       <Centered>
-        <p className="text-danger">Algo ha ido mal.</p>
-        <Link href="/" className="mt-4 text-brand-ink underline">
+        <p className="text-danger">
+          {resumeId ? "No se ha podido retomar esa sesión." : "No se ha podido preparar la sesión."}
+        </p>
+        {resumeId && (
+          <p className="mt-1 text-sm text-muted">
+            Puede que ya estuviera terminada. Tus respuestas están guardadas.
+          </p>
+        )}
+        <Link href="/session" className="mt-4 text-brand-ink underline">
+          Empezar una sesión nueva
+        </Link>
+        <Link href="/" className="mt-2 text-sm text-muted underline">
           Volver al inicio
         </Link>
       </Centered>
@@ -200,6 +262,13 @@ export default function SessionRunner({ mode = "daily" }: { mode?: SessionMode }
           {index + 1}/{items.length}
         </span>
       </div>
+
+      {/* Solo en la primera pregunta tras retomar: confirma que no se perdió nada. */}
+      {resumedFrom > 0 && index === resumedFrom && phase === "question" && (
+        <p className="mt-3 rounded-2xl border border-border bg-surface px-4 py-2 text-xs text-muted">
+          Sesión retomada. Las {resumedFrom} primeras respuestas ya estaban guardadas.
+        </p>
+      )}
 
       <div className="mt-6 flex items-center gap-2 text-xs text-muted">
         <span className="rounded-full bg-surface-muted px-2 py-0.5">
@@ -299,10 +368,30 @@ export default function SessionRunner({ mode = "daily" }: { mode?: SessionMode }
                 disabled={!answer.trim() || submitting}
                 className="mt-3 min-h-12 w-full rounded-2xl bg-brand text-base font-semibold text-white disabled:opacity-40"
               >
-                Comprobar
+                {submitting ? "Corrigiendo…" : submitError ? "Reintentar" : "Comprobar"}
               </button>
             )}
           </form>
+        )}
+
+        {/* Fallo al corregir: la sesión sigue en pie y se puede reintentar. */}
+        {submitError && phase === "question" && (
+          <div className="mt-3 rounded-2xl border border-danger/40 bg-danger-bg px-4 py-3 text-sm">
+            <p className="text-danger">{submitError}</p>
+            <p className="mt-1 text-xs text-muted">
+              Tu respuesta sigue escrita y las anteriores están guardadas. Vuelve a pulsar
+              «Reintentar».
+            </p>
+            {current.type === "multiple_choice" && answer && (
+              <button
+                onClick={() => submit(answer)}
+                disabled={submitting}
+                className="mt-2 text-xs font-semibold text-brand-ink underline underline-offset-2 disabled:opacity-50"
+              >
+                Reintentar «{answer}»
+              </button>
+            )}
+          </div>
         )}
       </div>
 
