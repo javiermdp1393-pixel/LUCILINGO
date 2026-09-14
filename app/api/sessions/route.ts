@@ -23,12 +23,14 @@ export async function POST(request: Request) {
     const sb = supabaseAdmin();
     const { data, error } = await sb
       .from("sessions")
-      .insert({ user_id: OWNER_USER_ID, items_total: items.length })
+      // La cola se guarda para poder retomar la sesión si se interrumpe. Es lo
+      // mismo que se envía al cliente, así que no contiene respuestas correctas.
+      .insert({ user_id: OWNER_USER_ID, items_total: items.length, queue: items })
       .select("id")
       .single();
     if (error) throw error;
 
-    return NextResponse.json({ sessionId: data.id, items });
+    return NextResponse.json({ sessionId: data.id, items, startIndex: 0, correctCount: 0 });
   } catch (err) {
     console.error("POST /api/sessions", err);
     return NextResponse.json({ error: "No se pudo crear la sesión." }, { status: 500 });

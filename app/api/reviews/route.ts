@@ -11,6 +11,15 @@ import type { Item, ReviewState, ReviewResult, SeverityLevel, OtherIssue } from 
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Sin esto la ruta se queda con el límite por defecto de la plataforma, que es
+// de pocos segundos. Corregir una frase o una traducción pasa por el modelo y a
+// veces tarda más: la función se mataba a media evaluación, el cliente recibía
+// un 504 y la sesión entera se venía abajo. El resto de rutas que llaman al
+// modelo ya lo declaraban; esta se quedó sin él.
+//
+// 60 y no 300: si la llamada se atasca de verdad, es mejor fallar pronto y
+// ofrecer reintentar que dejar la pantalla colgada varios minutos.
+export const maxDuration = 60;
 
 interface ReviewBody {
   sessionId: string | null;
