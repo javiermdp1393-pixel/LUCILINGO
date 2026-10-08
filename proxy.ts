@@ -19,6 +19,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // El cron de Vercel no trae cookie de sesión, así que la puerta de contraseña
+  // lo dejaría fuera. La ruta se protege ella misma con CRON_SECRET.
+  if (pathname.startsWith("/api/cron/")) {
+    return NextResponse.next();
+  }
+
   // API sin sesión → 401 (no redirigimos fetch a una página HTML).
   if (pathname.startsWith("/api/")) {
     return new NextResponse("Unauthorized", { status: 401 });
