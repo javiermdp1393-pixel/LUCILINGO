@@ -1,0 +1,63 @@
+name: Mantener viva la base de datos
+
+# Supabase pausa los proyectos del plan gratuito con poca actividad durante 7
+# días. Esto hace unas pocas peticiones diarias a la API REST para que cuente
+# como actividad de usuario.
+#
+# Es la segunda vía, a propósito. La primera es el cron de Vercel
+# (vercel.json → /api/cron/keepalive). Esta vive en GitHub y no depende de que
+# el despliegue esté bien, que es justo lo que falló las dos veces que se pausó
+# el proyecto. Que las dos se caigan a la vez es mucho menos probable.
+#
+# AVISO: GitHub desactiva los workflows programados tras 60 días sin actividad
+# en el repositorio, y avisa por correo antes de hacerlo. Si llega ese correo,
+# basta con reactivarlo desde la pestaña Actions.
+
+on:
+  schedule:
+    # 06:17 UTC. Minuto deliberadamente raro: los workflows programados en
+    # punto se encolan con todos los demás y GitHub los retrasa más.
+    - cron: "17 6 * * *"
+  # Permite lanzarlo a mano desde la pestaña Actions para comprobar que va.
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pedir unas filas a la API REST
+        env:
+          # Clave publicable (anon). No es un secreto: está pensada para ir en
+          # clientes, y en este proyecto todas las tablas tienen RLS activo sin
+          # políticas, así que con ella no se puede leer ni una fila. Va escrita
+          # aquí y no como secreto del repositorio para que no haya ningún paso
+          # manual que se pueda quedar pendiente.
+          SUPABASE_URL: https://ojqwxibpklmnzdrsjlsi.supabase.co
+          SUPABASE_ANON_KEY: sb_publishable_VlBxwYVpHyQcbuV5WvkedQ_GMz76F7X
+        run: |
+          set -euo pipefail
+
+          fallos=0
+          # Varias tablas: la documentación de Supabase habla de "unas pocas
+          # peticiones al día", no de una.
+          for tabla in mistakes items reviews; do
+            codigo=$(curl -sS -o /dev/null -w '%{http_code}' \
+              -H "apikey: ${SUPABASE_ANON_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+              "${SUPABASE_URL}/rest/v1/${tabla}?select=id&limit=1")
+
+            echo "${tabla}: HTTP ${codigo}"
+            # 200 con cuerpo vacío es lo esperado: RLS bloquea las filas, pero
+            # la petición ha llegado a la base de datos, que es lo que cuenta.
+            if [ "${codigo}" != "200" ]; then
+              fallos=$((fallos + 1))
+            fi
+          done
+
+          if [ "${fallos}" -gt 0 ]; then
+            echo "::error::La base de datos no respondió como se esperaba en ${fallos} de 3 peticiones."
+            echo "Si el proyecto está pausado, reactívalo en https://supabase.com/dashboard/project/ojqwxibpklmnzdrsjlsi"
+            exit 1
+          fi
+
+          echo "Base de datos viva."
